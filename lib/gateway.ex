@@ -131,6 +131,13 @@ defmodule MySensors.Gateway do
 
     case msg.type do
       I_LOG_MESSAGE -> Logger.debug "GWLOG #{msg.payload}"
+
+      I_TIME        ->
+        Logger.debug "Requesting controller time #{msg}"
+
+        MySensors.Message.new(msg.node_id, msg.child_sensor_id, :internal, false, I_TIME, DateTime.utc_now |> DateTime.to_unix(:seconds))
+        |> _send_message
+
       I_CONFIG      ->
         Logger.debug "Requesting controller configuration #{msg}"
 
@@ -150,8 +157,8 @@ defmodule MySensors.Gateway do
 
 
   # Process an error message
-  defp _process_message({:error, e, stacktrace}) do
-    Logger.error "Error processing input #{inspect e}\n#{stacktrace |> Exception.format_stacktrace}"
+  defp _process_message({:error, input, e, stacktrace}) do
+    Logger.error "Error processing input '#{input}': #{inspect e}\n#{stacktrace |> Exception.format_stacktrace}"
   end
 
 
@@ -166,7 +173,7 @@ defmodule MySensors.Gateway do
     s = MySensors.Message.serialize(msg)
 
     Logger.debug fn -> "Sending message #{msg}-> RAW: #{s}" end
-    Nerves.UART.write(Nerves.UART, s)
+    Nerves.UART.write(Nerves.UART, "#{s}\n")
   end
 
 end

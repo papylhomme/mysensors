@@ -65,7 +65,7 @@ defmodule MySensors.Message do
         payload: payload
       }
     rescue
-      e -> {:error, e, System.stacktrace}
+      e -> {:error, input, e, System.stacktrace}
     end
   end
 
@@ -92,7 +92,7 @@ defmodule MySensors.Message do
         x             -> x
       end
 
-    "#{msg.node_id},#{msg.child_sensor_id},#{cmd},#{if msg.ack, do: 1, else: 0},#{t},#{msg.payload}"
+    "#{msg.node_id};#{msg.child_sensor_id};#{cmd};#{if msg.ack, do: 1, else: 0};#{t};#{msg.payload}"
   end
 
 end
