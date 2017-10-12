@@ -51,6 +51,15 @@ defmodule MySensors.Types do
   end
 
 
+  @doc """
+  Get an ID from the given type
+  """
+  def internal_id(type) do
+    type |> _lookup_by_type(_internal())
+  end
+
+
+
 
   # Presentation types from MySensors.org
   defp _presentation do
@@ -105,6 +114,15 @@ defmodule MySensors.Types do
   def presentation_type_id(value) do
     value |> _lookup_by_value(_presentation())
   end
+
+
+  @doc """
+  Get an ID from the given type
+  """
+  def presentation_id(type) do
+    type |> _lookup_by_type(_presentation())
+  end
+
 
 
   # Variables types from MySensors.org
@@ -179,12 +197,31 @@ defmodule MySensors.Types do
   end
 
 
+  @doc """
+  Get an ID from the given type
+  """
+  def variable_id(type) do
+    type |> _lookup_by_type(_variable())
+  end
+
+
+
   # Lookup a type in an array using it's value
-  defp _lookup_by_value(value, array) do
-    case Enum.find(array, fn {_i, v, _m} -> value == v end) do
-      {i, _, _m}  -> i
-      _           -> value
+  defp _lookup_by_value(id, array) do
+    case Enum.find(array, fn {_t, i, _m} -> id == i end) do
+      {t, _, _m}  -> t
+      _           -> id
     end
   end
+
+
+  # Lookup an id in an array using it's type
+  defp _lookup_by_type(type, array) do
+    case Enum.find(array, fn {t, _i, _m} -> type == t end) do
+      {_, i, _m}  -> i
+      _           -> type
+    end
+  end
+
 
 end

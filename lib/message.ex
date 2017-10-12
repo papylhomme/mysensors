@@ -11,30 +11,13 @@ defmodule MySensors.Message do
 
 
   @doc """
-  Create a new message from raw parameters
+  Create a new message from parameters
   """
-  def new(command, node_id, child_sensor_id, ack, type, payload) do
-    cmd =
-      case command do
-        0 -> :presentation
-        1 -> :set
-        2 -> :req
-        3 -> :internal
-        x -> x
-      end
-
-    type =
-      case cmd do
-        :presentation -> type |> MySensors.Types.presentation_type_id
-        :set          -> type |> MySensors.Types.variable_type_id
-        :req          -> type |> MySensors.Types.variable_type_id
-        :internal     -> type |> MySensors.Types.internal_type_id
-      end
-
+  def new(node_id, child_sensor_id, command, ack, type, payload) do
     %__MODULE__{
       node_id: node_id,
       child_sensor_id: child_sensor_id,
-      command: cmd,
+      command: command,
       ack: ack,
       type: type,
       payload: payload
@@ -43,7 +26,7 @@ defmodule MySensors.Message do
 
 
   @doc """
-  Parse a line from a MySensors Serial Gateway
+  Parse a line using the MySensors Serial API
   """
   def parse(input) do
     try do
@@ -55,10 +38,61 @@ defmodule MySensors.Message do
       ack = ack == "1"
       type = type |> String.to_integer
 
-      new(command, node_id, child_sensor_id, ack, type, payload)
+      cmd =
+        case command do
+          0 -> :presentation
+          1 -> :set
+          2 -> :req
+          3 -> :internal
+          x -> x
+        end
+  
+      type =
+        case cmd do
+          :presentation -> type |> MySensors.Types.presentation_type_id
+          :set          -> type |> MySensors.Types.variable_type_id
+          :req          -> type |> MySensors.Types.variable_type_id
+          :internal     -> type |> MySensors.Types.internal_type_id
+          x             -> x
+        end
+  
+      %__MODULE__{
+        node_id: node_id,
+        child_sensor_id: child_sensor_id,
+        command: cmd,
+        ack: ack,
+        type: type,
+        payload: payload
+      }
     rescue
       e -> {:error, e, System.stacktrace}
     end
+  end
+
+
+  @doc """
+  Serialize a message using the MySensors Serial API
+  """
+  def serialize(msg) do
+    cmd =
+      case msg.command do
+        :presentation -> 0
+        :set          -> 1
+        :req          -> 2
+        :internal     -> 3
+        x -> x
+      end
+
+    t =
+      case msg.command do
+        :presentation -> msg.type |> MySensors.Types.presentation_id
+        :set          -> msg.type |> MySensors.Types.variable_id
+        :req          -> msg.type |> MySensors.Types.variable_id
+        :internal     -> msg.type |> MySensors.Types.internal_id
+        x             -> x
+      end
+
+    "#{msg.node_id},#{msg.child_sensor_id},#{cmd},#{if msg.ack, do: 1, else: 0},#{t},#{msg.payload}"
   end
 
 end

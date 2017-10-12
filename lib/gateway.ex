@@ -50,9 +50,10 @@ defmodule MySensors.Gateway do
   Send a message to the gateway
   """
   def handle_call({:send, message}, _from, state) do
-    Logger.debug fn -> "Sending message #{MySensors.Message.parse(message)}" end
+    :ok =
+      message
+      |> _send_message
 
-    :ok = Nerves.UART.write(Nerves.UART, message)
     {:reply, :ok, state}
   end
 
@@ -107,8 +108,15 @@ defmodule MySensors.Gateway do
 
   # Process an internal message
   defp _process_message(msg = %{command: :internal}) do
+
     case msg.type do
       I_LOG_MESSAGE -> Logger.debug "GWLOG #{msg.payload}"
+      I_CONFIG      ->
+        Logger.debug "Requesting controller configuration #{msg}"
+
+        MySensors.Message.new(msg.node_id, msg.child_sensor_id, :internal, false, I_CONFIG, "I")
+        |> _send_message
+
       _             -> Logger.debug "Internal event #{msg}"
     end
   end
@@ -123,6 +131,15 @@ defmodule MySensors.Gateway do
   # Process an unknown message
   defp _process_message(msg) do
     Logger.warn "Unknown event #{inspect msg}"
+  end
+
+
+  # Send a message to the gateway
+  defp _send_message(msg) do
+    s = MySensors.Message.serialize(msg)
+
+    Logger.debug fn -> "Sending message #{msg}-> RAW: #{s}" end
+    Nerves.UART.write(Nerves.UART, s)
   end
 
 end
