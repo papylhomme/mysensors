@@ -30,4 +30,6 @@ use Mix.Config
 #     import_config "#{Mix.env}.exs"
 
 
-config :mysensors, uart: "ttyUSB1"
+config :mysensors,
+  uart: "ttyUSB0",
+  measure: :metric

@@ -36,6 +36,14 @@ defmodule MySensors.Gateway do
 
 
   @doc """
+  Request gateway version
+  """
+  def version do
+    :ok = GenServer.call(__MODULE__, {:version})
+  end
+
+
+  @doc """
   Initialize the serial connection at server startup
   """
   def init(serial_dev) do
@@ -47,8 +55,20 @@ defmodule MySensors.Gateway do
 
 
   @doc """
-  Send a message to the gateway
+  Handle calls to the server
   """
+
+  # Handle version call
+  def handle_call({:version}, _from, state) do
+    :ok =
+      MySensors.Message.new(0, 255, :internal, false, I_VERSION, "")
+      |> _send_message
+
+    {:reply, :ok, state}
+  end
+
+
+  # Handle send message call
   def handle_call({:send, message}, _from, state) do
     :ok =
       message
@@ -114,7 +134,14 @@ defmodule MySensors.Gateway do
       I_CONFIG      ->
         Logger.debug "Requesting controller configuration #{msg}"
 
-        MySensors.Message.new(msg.node_id, msg.child_sensor_id, :internal, false, I_CONFIG, "I")
+        payload =
+          case Application.get_env(:mysensors, :measure) do
+            :metric   -> "M"
+            :imperial -> "I"
+            _         -> ""
+          end
+
+        MySensors.Message.new(msg.node_id, msg.child_sensor_id, :internal, false, I_CONFIG, payload)
         |> _send_message
 
       _             -> Logger.debug "Internal event #{msg}"
