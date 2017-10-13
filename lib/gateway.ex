@@ -44,6 +44,38 @@ defmodule MySensors.Gateway do
 
 
   @doc """
+  Discover nodes on the network
+  """
+  def discover do
+    :ok = GenServer.call(__MODULE__, {:discover})
+  end
+
+
+  @doc """
+  Request the node for presentation
+  """
+  def request_presentation(node) do
+    :ok = GenServer.call(__MODULE__, {:request_presentation, node})
+  end
+
+
+  @doc """
+  Discover sensors on the network and request presentation for each of them
+  """
+  def scan do
+    :ok = GenServer.call(__MODULE__, {:scan})
+  end
+
+
+
+
+
+  #################
+  #   Internals   #
+  #################
+
+
+  @doc """
   Initialize the serial connection at server startup
   """
   def init(serial_dev) do
@@ -60,21 +92,53 @@ defmodule MySensors.Gateway do
 
   # Handle version call
   def handle_call({:version}, _from, state) do
-    :ok =
+    res =
       MySensors.Message.new(0, 255, :internal, false, I_VERSION, "")
       |> _send_message
 
-    {:reply, :ok, state}
+    {:reply, res, state}
   end
+
+
+  # Handle version call
+  def handle_call({:discover}, _from, state) do
+    res =
+      MySensors.Message.new(255, 255, :internal, false, I_DISCOVER_REQUEST, "")
+      |> _send_message
+
+    {:reply, res, state}
+  end
+
+
+  # Handle version call
+  def handle_call({:scan}, _from, state) do
+    res =
+      MySensors.Message.new(255, 255, :internal, false, I_DISCOVER_REQUEST, "")
+      |> _send_message
+
+    {:reply, res, state}
+  end
+
+
+  # Handle version call
+  def handle_call({:request_presentation, node}, _from, state) do
+    res =
+      MySensors.Message.new(node, 255, :internal, false, I_PRESENTATION, "")
+      |> _send_message
+
+    {:reply, res, state}
+  end
+
+
 
 
   # Handle send message call
   def handle_call({:send, message}, _from, state) do
-    :ok =
+    res =
       message
       |> _send_message
 
-    {:reply, :ok, state}
+    {:reply, res, state}
   end
 
 
