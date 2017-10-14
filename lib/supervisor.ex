@@ -22,6 +22,7 @@ defmodule MySensors.Supervisor do
     Supervisor.init([
       {Nerves.UART, [name: Nerves.UART]},
       MySensors.DiscoveryManager,
+      MySensors.PresentationManager,
       {MySensors.Gateway, Application.get_env(:mysensors, :uart)},
     ], strategy: :one_for_one)
   end
