@@ -121,9 +121,7 @@ defmodule MySensors.Gateway do
   end
 
 
-  @doc """
-  Handle incoming messages
-  """
+  # Handle incoming messages
   def handle_info(msg = {:nerves_uart, _, _}, state) do
     serial_dev = state.serial_dev
     case msg do
@@ -258,7 +256,9 @@ defmodule MySensors.Gateway do
 
     @timeout 5000
 
-    # Start the server
+    @doc """
+    Start the server
+    """
     def start_link(_opts) do
       GenServer.start_link(__MODULE__, [])
     end

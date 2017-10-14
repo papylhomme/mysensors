@@ -15,9 +15,7 @@ defmodule MySensors.DiscoveryManager do
   end
 
 
-  @doc """
-  Initialize the manager
-  """
+  # Initialize the manager
   def init(_) do
     Supervisor.init([], strategy: :one_for_one)
   end
@@ -32,7 +30,9 @@ defmodule MySensors.DiscoveryManager do
   end
 
 
-  # Notify the handlers
+  @doc """
+  Notify the handlers
+  """
   def notify(msg) do
     for {_, pid, _, _} <- Supervisor.which_children(__MODULE__) do
       GenServer.cast(pid, msg)
