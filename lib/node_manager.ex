@@ -35,31 +35,33 @@ defmodule MySensors.NodeManager do
 
   # Initialize the manager
   def init(_) do
-    {:ok, %{nodes: %{}}}
+    {:ok, tid} = :dets.open_file("#{__MODULE__}.db", [ram_file: true, auto_save: 10])
+
+    {:ok, %{table: tid}}
   end
 
 
   # Handle node presentation
-  def handle_cast({:node_presentation, node_spec}, state) do
-    new_state =
-      case Map.has_key?(state.nodes, node_spec.node_id) do
-        true ->
-          Logger.warn "Updating node spec #{inspect node_spec}"
-          put_in(state, [:nodes, node_spec.node_id], node_spec)
-        false ->
-          Logger.info "New node registration #{inspect node_spec}"
-          put_in(state, [:nodes, node_spec.node_id], node_spec)
-      end
+  def handle_cast({:node_presentation, node_spec = %{node_id: node_id}}, state = %{table: tid}) do
+    case :dets.lookup(tid, node_id) do
+      [] ->
+        Logger.info "New node registration #{inspect node_spec}"
+        IO.inspect :dets.insert(tid, {node_id, node_spec})
 
-    {:noreply, new_state}
+      _ ->
+        Logger.warn "Updating node spec #{inspect node_spec}"
+        IO.inspect :dets.insert(tid, {node_id, node_spec})
+    end
+
+    {:noreply, state}
   end
 
 
   # Handle node event
-  def handle_cast({:node_event, msg}, state) do
-    case Map.has_key?(state.nodes, msg.node_id) do
-      true -> Logger.warn "Handling event !"
-      false -> :ok = MySensors.PresentationManager.request_presentation(msg.node_id)
+  def handle_cast({:node_event, %{node_id: node_id}}, state = %{table: tid}) do
+    case :dets.lookup(tid, node_id) do
+      []  -> :ok = MySensors.PresentationManager.request_presentation(node_id)
+      _   -> Logger.warn "Handling event !"
     end
 
     {:noreply, state}
