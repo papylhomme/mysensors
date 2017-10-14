@@ -2,6 +2,8 @@ defmodule MySensors.Gateway do
 
   @moduledoc """
   A server handling communication with MySensors Serial Gateway
+
+  TODO handle acks
   """
 
 

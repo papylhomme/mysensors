@@ -46,7 +46,7 @@ defmodule MySensors.Message do
           3 -> :internal
           x -> x
         end
-  
+
       type =
         case cmd do
           :presentation -> type |> MySensors.Types.presentation_type_id
@@ -55,7 +55,7 @@ defmodule MySensors.Message do
           :internal     -> type |> MySensors.Types.internal_type_id
           x             -> x
         end
-  
+
       %__MODULE__{
         node_id: node_id,
         child_sensor_id: child_sensor_id,

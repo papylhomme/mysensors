@@ -21,6 +21,7 @@ defmodule MySensors.Supervisor do
   def init(nil) do
     Supervisor.init([
       {Nerves.UART, [name: Nerves.UART]},
+      MySensors.NodeEvents,
       MySensors.NodeManager,
       MySensors.PresentationManager,
       MySensors.DiscoveryManager,
