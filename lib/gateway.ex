@@ -31,8 +31,18 @@ defmodule MySensors.Gateway do
   Send a message to the gateway
   """
   def send_message(message) do
-    :ok = GenServer.call(__MODULE__, {:send, message})
+    :ok = GenServer.cast(__MODULE__, {:send, message})
   end
+
+
+  @doc """
+  Send a message to the gateway
+  """
+  def send_message(node_id, child_sensor_id, command, ack, type, payload \\ "") do
+    message = MySensors.Message.new(node_id, child_sensor_id, command, ack, type, payload)
+    :ok = GenServer.cast(__MODULE__, {:send, message})
+  end
+
 
 
   @doc """
@@ -48,14 +58,6 @@ defmodule MySensors.Gateway do
   """
   def discover do
     :ok = GenServer.call(__MODULE__, {:discover})
-  end
-
-
-  @doc """
-  Request the node for presentation
-  """
-  def request_presentation(node) do
-    :ok = GenServer.call(__MODULE__, {:request_presentation, node})
   end
 
 
@@ -105,23 +107,17 @@ defmodule MySensors.Gateway do
     _send_discover_request()
 
     # Manually request presentation from the gateway
-    _send_presentation_request(0)
+    MySensors.PresentationManager.request_presentation(0)
 
     {:reply, :ok, state}
   end
 
 
-  # Handle version call
-  def handle_call({:request_presentation, node}, _from, state) do
-    {:reply, _send_presentation_request(node), state}
-  end
-
-
-
 
   # Handle send message call
-  def handle_call({:send, message}, _from, state) do
-    {:reply, _send_message(message), state}
+  def handle_cast({:send, message}, state) do
+    _send_message(message)
+    {:noreply, state}
   end
 
 
@@ -162,15 +158,10 @@ defmodule MySensors.Gateway do
   end
 
 
-  # Process a set message
-  defp _process_message(msg = %{command: :set}) do
-    Logger.debug "Set event #{msg}"
-  end
-
-
-  # Process a command message
-  defp _process_message(msg = %{command: :req}) do
-    Logger.debug "Req event #{msg}"
+  # Process a req or set message
+  defp _process_message(msg = %{command: cmd}) when cmd in [:set, :req] do
+    Logger.debug "Node event #{msg}"
+    MySensors.NodeManager.on_node_event(msg)
   end
 
 
@@ -257,13 +248,6 @@ defmodule MySensors.Gateway do
   end
 
 
-  # Send a presentation request to the given node
-  defp _send_presentation_request(node) do
-   Logger.info "Requesting presentation from node #{node}..."
-   _send_message(node, 255, :internal, false, I_PRESENTATION)
-  end
-
-
   defmodule ScanDiscoveryHandler do
 
     @moduledoc """
@@ -289,7 +273,7 @@ defmodule MySensors.Gateway do
     # Handle discover response
     def handle_cast(msg = %{type: I_DISCOVER_RESPONSE}, state) do
       Logger.info "Node #{msg.node_id} discovered"
-      MySensors.Gateway.request_presentation(msg.node_id)
+      MySensors.PresentationManager.request_presentation(msg.node_id)
       {:noreply, state, @timeout}
     end
 

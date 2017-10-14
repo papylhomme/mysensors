@@ -19,6 +19,16 @@ defmodule MySensors.PresentationManager do
 
 
   @doc """
+  Request the node for presentation
+  """
+  def request_presentation(node) do
+    :ok = GenServer.cast(__MODULE__, {:request_presentation, node})
+  end
+
+
+
+
+  @doc """
   Process a presentation event
   """
   def on_presentation_event(msg) do
@@ -32,22 +42,34 @@ defmodule MySensors.PresentationManager do
   end
 
 
-  # Handle initial presentation message
-  def handle_cast(msg = %{command: :presentation, child_sensor_id: 255, node_id: node}, state) do
+  # Handle version call
+  def handle_cast({:request_presentation, node}, state) do
     new_state =
       case Map.has_key?(state, node) do
         true ->
-          Logger.error "Presentation for node #{node} is already running"
+          Logger.warn "Presentation request already running for node #{node}!"
           state
 
         false ->
-          Logger.info "Starting presentation accumulation for node #{node}"
+          Logger.info "Requesting presentation from node #{node}..."
 
-          {:ok, pid} = PresentationAccumulator.start_link(msg)
-          Process.monitor(pid)
-
-          Map.put(state, node, pid)
+          :ok = MySensors.Gateway.send_message(node, 255, :internal, false, I_PRESENTATION)
+          state |> _init_accumulator(node)
       end
+
+    {:noreply, new_state}
+  end
+
+
+  # Handle receiving presentation without asking first
+  def handle_cast(msg = %{node_id: node, child_sensor_id: 255, command: :presentation}, state) do
+    new_state =
+      case Map.has_key?(state, node) do
+        true -> state
+        false -> state |> _init_accumulator(node)
+      end
+
+    Map.get(new_state, node) |> PresentationAccumulator.on_presentation_event(msg)
 
     {:noreply, new_state}
   end
@@ -66,7 +88,8 @@ defmodule MySensors.PresentationManager do
 
   # Handle accumulator finishing
   def handle_info({:DOWN, _, _, _, {:shutdown, acc}}, state) do
-    Logger.info "Presentation accumulator finishing #{inspect acc}"
+    Logger.debug "Presentation accumulator for node #{acc.node_id} finishing #{inspect acc}"
+    :ok = MySensors.NodeManager.on_node_presentation(acc)
     {:noreply, Map.delete(state, acc.node_id)}
   end
 
@@ -75,6 +98,16 @@ defmodule MySensors.PresentationManager do
   def handle_info(_, state) do
     {:noreply, state}
   end
+
+
+  # Initialize an accumulator for the given node
+  defp _init_accumulator(state, node, type \\ nil, version \\ nil) do
+      {:ok, pid} = PresentationAccumulator.start_link(node, type, version)
+      Process.monitor(pid)
+
+      put_in(state, [node], pid)
+  end
+
 
 
   defmodule PresentationAccumulator do
@@ -91,10 +124,9 @@ defmodule MySensors.PresentationManager do
     @doc """
     Start the accumulator
     """
-    def start_link(initial_msg) do
-      GenServer.start(__MODULE__, initial_msg)
+    def start_link(node_id, type \\ nil, version \\ nil) do
+      GenServer.start(__MODULE__, {node_id, type, version})
     end
-
 
     @doc """
     Process a presentation event
@@ -105,11 +137,11 @@ defmodule MySensors.PresentationManager do
 
 
     # Initialize the accumulator
-    def init(initial_msg) do
+    def init({node_id, type, version}) do
       state = %{
-        node_id: initial_msg.node_id,
-        type: initial_msg.type,
-        version: initial_msg.payload,
+        node_id: node_id,
+        type: type,
+        version: version,
         sketch_name: nil,
         sketch_version: nil,
         sensors: %{}
@@ -131,7 +163,13 @@ defmodule MySensors.PresentationManager do
     end
 
 
-    # Handle a presentation event
+    # Handle the node presentation event
+    def handle_cast(%{command: :presentation, child_sensor_id: 255, type: type, payload: version}, state) do
+      {:noreply, %{state | type: type, version: version}, @timeout}
+    end
+
+
+    # Handle a sensor presentation event
     def handle_cast(%{command: :presentation, child_sensor_id: sensor_id, type: sensor_type, payload: sensor_desc}, state) do
       {:noreply, put_in(state, [:sensors, sensor_id], {sensor_id, sensor_type, sensor_desc}), @timeout}
     end
