@@ -112,6 +112,9 @@ defmodule MySensors.Gateway do
 
   # Handle version call
   def handle_call({:scan}, _from, state) do
+    Logger.info "Starting scan of MySensors network..."
+    MySensors.DiscoveryManager.add_handler(__MODULE__.ScanDiscoveryHandler, [])
+
     res =
       MySensors.Message.new(255, 255, :internal, false, I_DISCOVER_REQUEST, "")
       |> _send_message
@@ -122,6 +125,7 @@ defmodule MySensors.Gateway do
 
   # Handle version call
   def handle_call({:request_presentation, node}, _from, state) do
+    Logger.info "Requesting presentation from node #{node}..."
     res =
       MySensors.Message.new(node, 255, :internal, false, I_PRESENTATION, "")
       |> _send_message
@@ -196,6 +200,10 @@ defmodule MySensors.Gateway do
     case msg.type do
       I_LOG_MESSAGE -> Logger.debug "GWLOG #{msg.payload}"
 
+      I_DISCOVER_RESPONSE  ->
+        Logger.debug "Discover response #{msg}"
+        MySensors.DiscoveryManager.notify(msg)
+
       I_TIME        ->
         Logger.debug "Requesting controller time #{msg}"
 
@@ -238,6 +246,50 @@ defmodule MySensors.Gateway do
 
     Logger.debug fn -> "Sending message #{msg}-> RAW: #{s}" end
     Nerves.UART.write(Nerves.UART, "#{s}\n")
+  end
+
+
+  defmodule ScanDiscoveryHandler do
+
+    @moduledoc """
+    An handler requesting presentation upon discovery
+    """
+
+    use GenServer, restart: :temporary
+
+
+    # Start the server
+    def start_link(_opts) do
+      GenServer.start_link(__MODULE__, [], [])
+    end
+
+
+    # Init the server
+    def init(_) do
+      {:ok, %{}, 5000}
+    end
+
+
+    # Handle discover response
+    def handle_cast(msg = %{type: I_DISCOVER_RESPONSE}, state) do
+      Logger.info "Node #{msg.node_id} discovered"
+      MySensors.Gateway.request_presentation(msg.node_id)
+      {:noreply, state, 5000}
+    end
+
+
+    # Fallback
+    def handle_cast(_, state) do
+      {:noreply, state, 5000}
+    end
+
+
+    # Timeout to stop the server
+    def handle_info(:timeout, state) do
+      Logger.info "Network scan finished"
+      {:stop, :shutdown, state}
+    end
+
   end
 
 end
