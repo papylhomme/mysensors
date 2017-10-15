@@ -25,6 +25,21 @@ defmodule MySensors.Sensor do
   end
 
 
+  @doc """
+  Request data
+  """
+  def data(pid) do
+    GenServer.call(pid, :data)
+  end
+
+
+  @doc """
+  Request data
+  """
+  def data(pid, type) do
+    GenServer.call(pid, {:data, type})
+  end
+
 
   @doc """
   Send a command to the sensor
@@ -45,13 +60,25 @@ defmodule MySensors.Sensor do
 
   # Initialize the server
   def init({node_id, {id, type, desc}}) do
-    {:ok, %{node_id: node_id, id: id, type: type, desc: desc}}
+    {:ok, %{node_id: node_id, id: id, type: type, desc: desc, data: %{}}}
   end
 
 
   # Handle info request
   def handle_call(:info, _from, state) do
     {:reply, state, state}
+  end
+
+
+  # Handle data request
+  def handle_call(:data, _from, state) do
+    {:reply, state.data, state}
+  end
+
+
+  # Handle data request
+  def handle_call({:data, type}, _from, state) do
+    {:reply, Map.get(state.data, type), state}
   end
 
 
@@ -64,10 +91,23 @@ defmodule MySensors.Sensor do
   end
 
 
-  # Handle sensor events
+  # Handle sensor values
+  def handle_cast({:sensor_event, %{command: :set, type: type, payload: value}}, state) do
+    Logger.info "#{_sensor_name(state)} received new #{type} value: #{value}"
+    {:noreply, put_in(state, [:data, type], {value, DateTime.utc_now})}
+  end
+
+
+  # Handle other sensor events
   def handle_cast({:sensor_event, msg}, state) do
-    Logger.warn "Node#{state.node_id}/Sensor#{state.id} (#{state.type}) handling event #{msg}"
+    Logger.warn "#{_sensor_name(state)} received unexpected event: #{msg}"
     {:noreply, state}
+  end
+
+
+  # Create a readable sensor name
+  defp _sensor_name(state) do
+    "Node#{state.node_id}/Sensor#{state.id} (#{state.type})"
   end
 
 end
