@@ -93,7 +93,7 @@ defmodule MySensors.Sensor do
 
   # Handle sensor values
   def handle_cast({:sensor_event, %{command: :set, type: type, payload: value}}, state) do
-    Logger.info "#{_sensor_name(state)} received new #{type} value: #{value}"
+    Logger.debug "#{_sensor_name(state)} received new #{type} value: #{value}"
     {:noreply, put_in(state, [:data, type], {value, DateTime.utc_now})}
   end
 

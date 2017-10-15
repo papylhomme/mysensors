@@ -48,13 +48,15 @@ defmodule MySensors.NodeManager do
     {:ok, tid} = :dets.open_file(@db, [ram_file: true, auto_save: 10])
     {:ok, supervisor} = Supervisor.start_link([], strategy: :one_for_one, name: __MODULE__.Supervisor)
 
+    state = %{table: tid, supervisor: supervisor}
+
     Logger.info "Initializing nodes from storage..."
-    :dets.traverse(tid, fn {id, node_specs} ->
-      Supervisor.start_child(supervisor, Supervisor.child_spec({MySensors.Node, node_specs}, id: id))
+    :dets.traverse(tid, fn {id, _node_specs} ->
+      _start_child(state, id)
       :continue
     end)
 
-    {:ok, %{table: tid, supervisor: supervisor}}
+    {:ok, state}
   end
 
 
@@ -76,17 +78,19 @@ defmodule MySensors.NodeManager do
       [] ->
         Logger.info "New node registration #{inspect node_specs}"
 
-        :dets.insert(tid, {node_id, node_specs})
-        Supervisor.start_child(state.supervisor, Supervisor.child_spec({MySensors.Node, node_specs}, id: node_id))
-        MySensors.NodeEvents.notify({:new_node, node_specs})
+        :ok = :dets.insert(tid, {node_id, node_specs})
+        _start_child(state, node_id)
 
       _ ->
         Logger.warn "Updating node spec #{inspect node_specs}"
 
-        #TODO handle node changed (restart ?)
+        :ok = :dets.insert(tid, {node_id, node_specs})
 
-        :dets.insert(tid, {node_id, node_specs})
-        MySensors.NodeEvents.notify({:updated_node, node_specs})
+        #TODO only kill if significant changes have been made (delegate to node directly ?)
+        case _node_pid(state, node_id) do
+          nil -> nil
+          pid -> Process.exit(pid, :kill)
+        end
     end
 
     {:noreply, state}
@@ -98,17 +102,26 @@ defmodule MySensors.NodeManager do
     case :dets.lookup(state.table, node_id) do
       []  -> :ok = MySensors.PresentationManager.request_presentation(node_id)
       _   ->
-        node =
-          Supervisor.which_children(state.supervisor)
-          |> Enum.find_value(fn {id, pid, _, _} -> if id == node_id, do: pid, else: nil end)
-
-        case node do
+        case _node_pid(state, node_id) do
           nil   -> Logger.warn "Received event for unknow node #{node_id}: #{msg}"
           node  -> MySensors.Node.on_event(node, msg)
         end
     end
 
     {:noreply, state}
+  end
+
+
+  # Start a supervised node
+  defp _start_child(state, node_id) do
+    {:ok, _pid} = Supervisor.start_child(state.supervisor, Supervisor.child_spec({MySensors.Node, {state.table, node_id}}, id: node_id))
+  end
+
+
+  # Get the pid of the server managing the given node
+  def _node_pid(state, node_id) do
+    Supervisor.which_children(state.supervisor)
+    |> Enum.find_value(fn {id, pid, _, _} -> if id == node_id, do: pid, else: nil end)
   end
 
 

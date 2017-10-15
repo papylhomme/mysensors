@@ -14,8 +14,8 @@ defmodule MySensors.Node do
   @doc """
   Start the server
   """
-  def start_link(node_specs) do
-    GenServer.start_link(__MODULE__, node_specs, [name: "#{MySensors.Node}#{node_specs.node_id}" |> String.to_atom])
+  def start_link({table, node_id}) do
+    GenServer.start_link(__MODULE__, {table, node_id}, [name: "#{MySensors.Node}#{node_id}" |> String.to_atom])
   end
 
 
@@ -44,7 +44,9 @@ defmodule MySensors.Node do
 
 
   # Initialize the server
-  def init(node_specs) do
+  def init({table, node_id}) do
+    [{_id, node_specs}] = :dets.lookup(table, node_id)
+
     sensors =
       for {id, sensor_specs} <- node_specs.sensors, into: %{} do
         {:ok, pid} = MySensors.Sensor.start_link(node_specs.node_id, sensor_specs)
