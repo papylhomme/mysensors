@@ -48,6 +48,7 @@ defmodule MySensors.NodeManager do
     {:ok, tid} = :dets.open_file(@db, [ram_file: true, auto_save: 10])
     {:ok, supervisor} = Supervisor.start_link([], strategy: :one_for_one, name: __MODULE__.Supervisor)
 
+    Logger.info "Initializing nodes from storage..."
     :dets.traverse(tid, fn {id, node_specs} ->
       Supervisor.start_child(supervisor, Supervisor.child_spec({MySensors.Node, node_specs}, id: id))
       :continue
@@ -101,7 +102,10 @@ defmodule MySensors.NodeManager do
           Supervisor.which_children(state.supervisor)
           |> Enum.find_value(fn {id, pid, _, _} -> if id == node_id, do: pid, else: nil end)
 
-        if node, do: MySensors.Node.on_event(node, msg)
+        case node do
+          nil   -> Logger.warn "Received event for unknow node #{node_id}: #{msg}"
+          node  -> MySensors.Node.on_event(node, msg)
+        end
     end
 
     {:noreply, state}

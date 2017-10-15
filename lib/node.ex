@@ -51,6 +51,8 @@ defmodule MySensors.Node do
         {id, pid}
       end
 
+    Logger.info "New node #{node_specs.node_id} online (#{inspect node_specs.sensors})"
+
     {:ok, %{
       node_id: node_specs.node_id,
       type: node_specs.type,
@@ -85,7 +87,7 @@ defmodule MySensors.Node do
     if Map.has_key?(state.sensors, sensor_id) do
       MySensors.Sensor.on_event(state.sensors[sensor_id], msg)
     else
-      Logger.warn "Node #{state.specs.node_id} handling event #{msg}"
+      Logger.warn "Node #{state.node_id} handling unexpected event #{msg}"
     end
 
     {:noreply, state}

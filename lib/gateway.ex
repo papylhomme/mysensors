@@ -151,6 +151,12 @@ defmodule MySensors.Gateway do
   end
 
 
+  # Handle gateway ready
+  defp _process_message(%{command: :internal, type: I_GATEWAY_READY}) do
+    Logger.info "Gateway ready !"
+  end
+
+
   # Process a presentation message
   defp _process_message(msg = %{command: :presentation}) do
     Logger.debug "Presentation event #{msg}"
