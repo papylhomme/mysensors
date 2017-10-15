@@ -82,14 +82,11 @@ defmodule MySensors.NodeManager do
         _start_child(state, node_id)
 
       _ ->
-        Logger.warn "Updating node spec #{inspect node_specs}"
-
         :ok = :dets.insert(tid, {node_id, node_specs})
 
-        #TODO only kill if significant changes have been made (delegate to node directly ?)
         case _node_pid(state, node_id) do
           nil -> nil
-          pid -> Process.exit(pid, :kill)
+          pid -> MySensors.Node.on_specs_updated(pid, node_specs)
         end
     end
 

@@ -43,6 +43,14 @@ defmodule MySensors.Node do
   end
 
 
+  @doc """
+  Handle a specs updated event
+  """
+  def on_specs_updated(pid, msg) do
+    GenServer.cast(pid, {:specs_updated, msg})
+  end
+
+
   # Initialize the server
   def init({table, node_id}) do
     [{_id, node_specs}] = :dets.lookup(table, node_id)
@@ -94,5 +102,27 @@ defmodule MySensors.Node do
 
     {:noreply, state}
   end
+
+
+  # Handle node specs updated
+  # TODO more robust change detectipn
+  def handle_cast({:specs_updated, node_specs}, state) do
+    if Map.size(state.sensors) == Map.size(node_specs.sensors) do
+      new_state = %{state |
+        type: node_specs.type,
+        version: node_specs.version,
+        sketch_name: node_specs.sketch_name,
+        sketch_version: node_specs.sketch_version,
+      }
+
+      Logger.info "Node #{state.node_id} received a specs update"
+
+      {:noreply, new_state}
+    else
+      Logger.warn "Node #{state.node_id} received incompatible specs update, restarting"
+      {:stop, {:shutdown, :specs_updated}, state}
+    end
+  end
+
 
 end
