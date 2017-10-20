@@ -1,11 +1,31 @@
 defmodule MySensors.Types do
 
   @moduledoc """
-  Helper to convert from/to MySensors ID to string ID
+  Helper to convert from/to MySensors ID to atoms
 
-  TODO move this to (D)ETS
-  TODO implement an helper to parse the website and update the storage
+  Extracted from [MySensors Serial API 2.0](https://www.mysensors.org/download/serial_api_20)
+
+  TODO move this to (D)ETS and implement an helper to parse the website and update the storage ?
   """
+
+  @typedoc "MySensors command type"
+  @type command :: :presentation | :set | :req | :internal | :unknown
+
+  @typedoc "MySensors ID"
+  @type id :: pos_integer
+
+  @typedoc "MySensors Type"
+  @type type :: atom
+
+  @typedoc "MySensors internal command type"
+  @type internal :: type
+
+  @typedoc "MySensors sensor type"
+  @type sensor :: type
+
+  @typedoc "MySensors variable type"
+  @type variable :: type
+
 
   # Internal types from MySensors.org
   defp _internal do
@@ -46,7 +66,8 @@ defmodule MySensors.Types do
   @doc """
   Get a type from the given ID
   """
-  def internal_type_id(value) do
+  @spec internal_type(id) :: internal
+  def internal_type(value) do
     value |> _lookup_by_value(_internal())
   end
 
@@ -54,6 +75,7 @@ defmodule MySensors.Types do
   @doc """
   Get an ID from the given type
   """
+  @spec internal_id(internal) :: id
   def internal_id(type) do
     type |> _lookup_by_type(_internal())
   end
@@ -111,7 +133,8 @@ defmodule MySensors.Types do
   @doc """
   Get a type from the given ID
   """
-  def presentation_type_id(value) do
+  @spec presentation_type(id) :: sensor
+  def presentation_type(value) do
     value |> _lookup_by_value(_presentation())
   end
 
@@ -119,6 +142,7 @@ defmodule MySensors.Types do
   @doc """
   Get an ID from the given type
   """
+  @spec presentation_id(sensor) :: id
   def presentation_id(type) do
     type |> _lookup_by_type(_presentation())
   end
@@ -192,7 +216,8 @@ defmodule MySensors.Types do
   @doc """
   Get a type from the given ID
   """
-  def variable_type_id(value) do
+  @spec variable_type(id) :: variable
+  def variable_type(value) do
     value |> _lookup_by_value(_variable())
   end
 
@@ -200,6 +225,7 @@ defmodule MySensors.Types do
   @doc """
   Get an ID from the given type
   """
+  @spec variable_id(variable) :: id
   def variable_id(type) do
     type |> _lookup_by_type(_variable())
   end
