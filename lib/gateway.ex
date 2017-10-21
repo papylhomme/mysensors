@@ -1,5 +1,8 @@
 defmodule MySensors.Gateway do
 
+  alias MySensors.Types
+  alias MySensors.Message
+
   @moduledoc """
   A server handling communication with MySensors Serial Gateway
 
@@ -15,6 +18,7 @@ defmodule MySensors.Gateway do
   @doc """
   Start the server on the given serial device
   """
+  @spec start_link(String.t) :: GenServer.on_start
   def start_link(serial_dev) do
     GenServer.start_link(__MODULE__, serial_dev, name: __MODULE__)
   end
@@ -22,7 +26,10 @@ defmodule MySensors.Gateway do
 
   @doc """
   DEV simulate a message from the gateway
+
+  The message is injected directly in the pipeline using `Kernel.send/2`
   """
+  @spec simulate(Message.t) :: :ok
   def simulate(msg) do
     send __MODULE__, {:nerves_uart, Application.get_env(:mysensors, :uart), msg}
     :ok
@@ -30,48 +37,31 @@ defmodule MySensors.Gateway do
 
 
   @doc """
-  Send a message to the gateway
+  Send a message via the gateway
   """
+  @spec send_message(Message.t) :: :ok
   def send_message(message) do
-    :ok = GenServer.cast(__MODULE__, {:send, message})
+    GenServer.cast(__MODULE__, {:send, message})
   end
 
 
   @doc """
-  Send a message to the gateway
+  Send a message via the gateway
   """
+  @spec send_message(Types.id, Types.id, Types.command, boolean, Types.type, String.t) :: :ok
   def send_message(node_id, child_sensor_id, command, ack, type, payload \\ "") do
     message = MySensors.Message.new(node_id, child_sensor_id, command, ack, type, payload)
-    :ok = GenServer.cast(__MODULE__, {:send, message})
+    GenServer.cast(__MODULE__, {:send, message})
   end
-
 
 
   @doc """
   Request gateway version
   """
+  @spec version() :: :ok
   def version do
     :ok = GenServer.call(__MODULE__, {:version})
   end
-
-
-  @doc """
-  Discover nodes on the network
-  """
-  def discover do
-    :ok = GenServer.call(__MODULE__, {:discover})
-  end
-
-
-  @doc """
-  Discover sensors on the network and request presentation for each of them
-  """
-  def scan do
-    :ok = GenServer.call(__MODULE__, {:scan})
-  end
-
-
-
 
 
   #################
@@ -82,7 +72,8 @@ defmodule MySensors.Gateway do
   # Initialize the serial connection at server startup
   def init(serial_dev) do
     Logger.debug "Starting MySensors serial gateway on #{serial_dev}"
-    :ok = Nerves.UART.open(Nerves.UART, serial_dev, speed: 115200, active: true, framing: {Nerves.UART.Framing.Line, separator: "\n"})
+    #:ok = Nerves.UART.open(Nerves.UART, serial_dev, speed: 115200, active: true, framing: {Nerves.UART.Framing.Line, separator: "\n"})
+    Nerves.UART.open(Nerves.UART, serial_dev, speed: 115200, active: true, framing: {Nerves.UART.Framing.Line, separator: "\n"})
 
     {:ok, %{serial_dev: serial_dev}}
   end
@@ -92,28 +83,6 @@ defmodule MySensors.Gateway do
   def handle_call({:version}, _from, state) do
     {:reply, _send_message(0, 255, :internal, false, I_VERSION), state}
   end
-
-
-  # Handle discover call
-  def handle_call({:discover}, _from, state) do
-    {:reply, _send_discover_request(), state}
-  end
-
-
-  # Handle version call
-  def handle_call({:scan}, _from, state) do
-    Logger.info "Starting scan of MySensors network..."
-
-    # Register scan discovery handler and start the scan
-    MySensors.DiscoveryManager.add_handler(__MODULE__.ScanDiscoveryHandler, [])
-    _send_discover_request()
-
-    # Manually request presentation from the gateway
-    MySensors.PresentationManager.request_presentation(0)
-
-    {:reply, :ok, state}
-  end
-
 
 
   # Handle send message call
@@ -164,8 +133,8 @@ defmodule MySensors.Gateway do
   end
 
 
-  # Process a req or set message
-  defp _process_message(msg = %{command: cmd}) when cmd in [:set, :req] do
+  # Process a set message
+  defp _process_message(msg = %{command: :set}) do
     Logger.debug "Node event #{msg}"
     MySensors.NodeManager.on_node_event(msg)
   end
@@ -244,60 +213,6 @@ defmodule MySensors.Gateway do
   defp _send_message(node_id, child_sensor_id, command, ack, type, payload \\ "") do
     MySensors.Message.new(node_id, child_sensor_id, command, ack, type, payload)
     |> _send_message
-  end
-
-
-  # Send a discover request to the network
-  defp _send_discover_request do
-    Logger.info "Sending discover request"
-    _send_message(255, 255, :internal, false, I_DISCOVER_REQUEST)
-  end
-
-
-  defmodule ScanDiscoveryHandler do
-
-    @moduledoc """
-    An handler requesting presentation upon discovery
-    """
-
-    use GenServer, restart: :temporary
-
-    @timeout 5000
-
-    @doc """
-    Start the server
-    """
-    def start_link(_opts) do
-      GenServer.start_link(__MODULE__, [])
-    end
-
-
-    # Init the server
-    def init(_) do
-      {:ok, %{}, @timeout}
-    end
-
-
-    # Handle discover response
-    def handle_cast(msg = %{type: I_DISCOVER_RESPONSE}, state) do
-      Logger.info "Node #{msg.node_id} discovered"
-      MySensors.PresentationManager.request_presentation(msg.node_id)
-      {:noreply, state, @timeout}
-    end
-
-
-    # Fallback
-    def handle_cast(_, state) do
-      {:noreply, state, @timeout}
-    end
-
-
-    # Timeout to stop the server
-    def handle_info(:timeout, state) do
-      Logger.info "Network scan finished"
-      {:stop, :shutdown, state}
-    end
-
   end
 
 end

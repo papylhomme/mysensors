@@ -1,27 +1,41 @@
 defmodule MySensors.Node do
 
+  alias MySensors.Types
+
   @moduledoc """
   A server to interract with a MySensors node
 
   TODO support offline/online/lastseen/heartbeat and such
   """
 
-  use GenServer
+  defstruct node_id: nil, type: nil, version: nil, sketch_name: nil, sketch_version: nil, sensors: %{}
 
+  @typedoc "Sensors info"
+  @type sensors :: %{optional(Types.id) => MySensors.Sensor.info}
+
+  @typedoc "Node's info"
+  @type t :: %__MODULE__{node_id: Types.id, type: String.t, version: String.t, sketch_name: String.t, sketch_version: String.t, sensors: sensors}
+
+
+  use GenServer
   require Logger
 
 
   @doc """
-  Start the server
+  Start a node using the given id
+
+  On startup the node is loaded from storage
   """
+  @spec start_link({any, Types.id}) :: GenServer.on_start
   def start_link({table, node_id}) do
-    GenServer.start_link(__MODULE__, {table, node_id}, [name: "#{MySensors.Node}#{node_id}" |> String.to_atom])
+    GenServer.start_link(__MODULE__, {table, node_id}, [name: "#{__MODULE__}#{node_id}" |> String.to_atom])
   end
 
 
   @doc """
   Request information about the node
   """
+  @spec info(pid) :: t
   def info(pid) do
     GenServer.call(pid, :info)
   end
@@ -30,6 +44,7 @@ defmodule MySensors.Node do
   @doc """
   List the sensors
   """
+  @spec sensors(pid) :: sensors
   def sensors(pid) do
     GenServer.call(pid, :list_sensors)
   end
@@ -38,6 +53,7 @@ defmodule MySensors.Node do
   @doc """
   Handle a node event
   """
+  @spec on_event(pid, MySensors.Message.t) :: :ok
   def on_event(pid, msg) do
     GenServer.cast(pid, {:node_event, msg})
   end
@@ -46,8 +62,9 @@ defmodule MySensors.Node do
   @doc """
   Handle a specs updated event
   """
-  def on_specs_updated(pid, msg) do
-    GenServer.cast(pid, {:specs_updated, msg})
+  @spec on_specs_updated(pid, t) :: :ok
+  def on_specs_updated(pid, specs) do
+    GenServer.cast(pid, {:specs_updated, specs})
   end
 
 

@@ -1,57 +1,80 @@
 defmodule MySensors.Sensor do
 
+  alias MySensors.Types
+
   @moduledoc """
   A server to interract with a MySensors sensor
   """
 
-  use GenServer
+  defstruct id: nil, node_id: nil, type: nil, desc: nil, data: %{}
 
+  @typedoc "A sensor specs"
+  @type specs :: {Types.id, Types.sensor, String.t}
+
+  @typedoc "Data tuple"
+  @type data :: {any, DateTime.t}
+
+  @typedoc "Datas map"
+  @type datas :: %{optional(Types.variable) => data}
+
+  @typedoc "Sensor's info"
+  @type t :: %__MODULE__{id: Types.id, node_id: Types.id, type: Types.sensor, desc: String.t, data: datas}
+
+
+  use GenServer
   require Logger
+
 
 
   @doc """
   Start the server
   """
+  @spec start_link(Types.id, specs) :: GenServer.on_start
   def start_link(node_id, sensor_specs = {sensor_id, _, _}) do
     GenServer.start_link(__MODULE__, {node_id, sensor_specs}, [name: "#{MySensors.Node}#{node_id}.Sensor#{sensor_id}" |> String.to_atom])
   end
 
 
   @doc """
-  Request information about the sensor
+  Get information about the sensor
   """
+  @spec info(pid) :: t
   def info(pid) do
     GenServer.call(pid, :info)
   end
 
 
   @doc """
-  Request data
+  Get all available datas
   """
+  @spec data(pid) :: datas
   def data(pid) do
     GenServer.call(pid, :data)
   end
 
 
   @doc """
-  Request data
+  Get data for the given variable type
   """
+  @spec data(pid, Types.variable) :: data
   def data(pid, type) do
     GenServer.call(pid, {:data, type})
   end
 
 
   @doc """
-  Send a command to the sensor
+  Send a command to the sensor asynchronously
   """
+  @spec command(pid, Types.command, boolean, Types.type, String.t) :: :ok
   def command(pid, command, ack \\ false, type, payload \\ "") do
     GenServer.cast(pid, {:sensor_command, command, ack, type, payload})
   end
 
 
   @doc """
-  Handle a node event
+  Handle a sensor event asynchronously
   """
+  @spec on_event(pid, MySensors.Message.sensor_updated) :: :ok
   def on_event(pid, msg) do
     GenServer.cast(pid, {:sensor_event, msg})
   end
@@ -94,7 +117,9 @@ defmodule MySensors.Sensor do
   # Handle sensor values
   def handle_cast({:sensor_event, %{command: :set, type: type, payload: value}}, state) do
     Logger.debug "#{_sensor_name(state)} received new #{type} value: #{value}"
-    {:noreply, put_in(state, [:data, type], {value, DateTime.utc_now})}
+
+    data = put_in(state.data, type, {value, DateTime.utc_now})
+    {:noreply, %__MODULE__{state | data: data}}
   end
 
 

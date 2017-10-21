@@ -1,5 +1,7 @@
 defmodule MySensors.NodeManager do
 
+  alias MySensors.Node
+
   @moduledoc """
   Module responsible to track nodes on the network
   """
@@ -14,6 +16,7 @@ defmodule MySensors.NodeManager do
   @doc """
   Start the manager
   """
+  @spec start_link(any) :: GenServer.on_start
   def start_link(_) do
     GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
@@ -22,6 +25,7 @@ defmodule MySensors.NodeManager do
   @doc """
   Process a node presentation
   """
+  @spec on_node_presentation(MySensors.Message.presentation) :: :ok
   def on_node_presentation(node_spec) do
     GenServer.cast(__MODULE__, {:node_presentation, node_spec})
   end
@@ -30,6 +34,7 @@ defmodule MySensors.NodeManager do
   @doc """
   Process a node event
   """
+  @spec on_node_event(MySensors.Message.t) :: :ok
   def on_node_event(msg) do
     GenServer.cast(__MODULE__, {:node_event, msg})
   end
@@ -38,6 +43,7 @@ defmodule MySensors.NodeManager do
   @doc """
   List the known nodes
   """
+  @spec nodes() :: [Node.t]
   def nodes do
     GenServer.call(__MODULE__, :list_nodes)
   end
@@ -65,7 +71,7 @@ defmodule MySensors.NodeManager do
     res =
       Supervisor.which_children(state.supervisor)
       |> Enum.map(fn {_id, pid, _, _} ->
-        put_in(MySensors.Node.info(pid), [:pid], pid)
+        Map.put(Node.info(pid), :pid, pid)
       end)
 
     {:reply, res, state}
@@ -86,7 +92,7 @@ defmodule MySensors.NodeManager do
 
         case _node_pid(state, node_id) do
           nil -> nil
-          pid -> MySensors.Node.on_specs_updated(pid, node_specs)
+          pid -> Node.on_specs_updated(pid, node_specs)
         end
     end
 
@@ -101,7 +107,7 @@ defmodule MySensors.NodeManager do
       _   ->
         case _node_pid(state, node_id) do
           nil   -> Logger.warn "Received event for unknow node #{node_id}: #{msg}"
-          node  -> MySensors.Node.on_event(node, msg)
+          node  -> Node.on_event(node, msg)
         end
     end
 
@@ -111,7 +117,7 @@ defmodule MySensors.NodeManager do
 
   # Start a supervised node
   defp _start_child(state, node_id) do
-    {:ok, _pid} = Supervisor.start_child(state.supervisor, Supervisor.child_spec({MySensors.Node, {state.table, node_id}}, id: node_id))
+    {:ok, _pid} = Supervisor.start_child(state.supervisor, Supervisor.child_spec({Node, {state.table, node_id}}, id: node_id))
   end
 
 

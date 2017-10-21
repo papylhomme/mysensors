@@ -12,7 +12,7 @@ defmodule MySensors.Types do
   @type command :: :presentation | :set | :req | :internal | :unknown
 
   @typedoc "MySensors ID"
-  @type id :: pos_integer
+  @type id :: 0..255
 
   @typedoc "MySensors Type"
   @type type :: atom

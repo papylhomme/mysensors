@@ -11,6 +11,15 @@ defmodule MySensors.Message do
   @typedoc "A message"
   @type t :: %__MODULE__{node_id: Types.id, child_sensor_id: Types.id, command: Types.command, ack: boolean, type: Types.type, payload: String.t}
 
+  @typedoc "A presentation message"
+  @type presentation :: %__MODULE__{node_id: Types.id, child_sensor_id: Types.id, command: :presentation, ack: boolean, type: Types.type, payload: String.t}
+
+  @typedoc "A sensor event"
+  @type sensor_updated :: %__MODULE__{node_id: Types.id, child_sensor_id: Types.id, command: :set, ack: boolean, type: Types.type, payload: String.t}
+
+  @typedoc "A discovery event"
+  @type discovery :: %__MODULE__{node_id: Types.id, child_sensor_id: Types.id, command: :internal, ack: boolean, type: I_DISCOVER_RESPONSE, payload: String.t}
+
 
   require Logger
 

@@ -10,6 +10,7 @@ defmodule MySensors.Supervisor do
   @doc """
   Start the supervisor and register it's name
   """
+  @spec start_link() :: Supervisor.on_start
   def start_link do
     Supervisor.start_link(__MODULE__, nil, name: __MODULE__)
   end
@@ -18,6 +19,7 @@ defmodule MySensors.Supervisor do
   @doc """
   Start the children
   """
+  @spec init(nil) :: {:ok, tuple}
   def init(nil) do
     Supervisor.init([
       {Nerves.UART, [name: Nerves.UART]},
