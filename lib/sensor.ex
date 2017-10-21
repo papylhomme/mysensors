@@ -83,7 +83,7 @@ defmodule MySensors.Sensor do
 
   # Initialize the server
   def init({node_id, {id, type, desc}}) do
-    {:ok, %{node_id: node_id, id: id, type: type, desc: desc, data: %{}}}
+    {:ok, %__MODULE__{node_id: node_id, id: id, type: type, desc: desc, data: %{}}}
   end
 
 
@@ -118,7 +118,7 @@ defmodule MySensors.Sensor do
   def handle_cast({:sensor_event, %{command: :set, type: type, payload: value}}, state) do
     Logger.debug "#{_sensor_name(state)} received new #{type} value: #{value}"
 
-    data = put_in(state.data, type, {value, DateTime.utc_now})
+    data = Map.put(state.data, type, {value, DateTime.utc_now})
     {:noreply, %__MODULE__{state | data: data}}
   end
 

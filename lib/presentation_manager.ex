@@ -182,7 +182,7 @@ defmodule MySensors.PresentationManager do
 
     # Handle a sensor presentation event
     def handle_cast(%{command: :presentation, child_sensor_id: sensor_id, type: sensor_type, payload: sensor_desc}, state) do
-      sensors = put_in(state.sensors, [sensor_id], {sensor_id, sensor_type, sensor_desc})
+      sensors = Map.put(state.sensors, sensor_id, {sensor_id, sensor_type, sensor_desc})
 
       {:noreply, %Node{state | sensors: sensors}, @timeout}
     end

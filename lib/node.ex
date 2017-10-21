@@ -11,7 +11,7 @@ defmodule MySensors.Node do
   defstruct node_id: nil, type: nil, version: nil, sketch_name: nil, sketch_version: nil, sensors: %{}
 
   @typedoc "Sensors info"
-  @type sensors :: %{optional(Types.id) => MySensors.Sensor.info}
+  @type sensors :: %{optional(Types.id) => pid}
 
   @typedoc "Node's info"
   @type t :: %__MODULE__{node_id: Types.id, type: String.t, version: String.t, sketch_name: String.t, sketch_version: String.t, sensors: sensors}
@@ -44,7 +44,7 @@ defmodule MySensors.Node do
   @doc """
   List the sensors
   """
-  @spec sensors(pid) :: sensors
+  @spec sensors(pid) :: [MySensors.Sensor.info]
   def sensors(pid) do
     GenServer.call(pid, :list_sensors)
   end
@@ -80,7 +80,7 @@ defmodule MySensors.Node do
 
     Logger.info "New node #{node_specs.node_id} online (#{inspect node_specs.sensors})"
 
-    {:ok, %{
+    {:ok, %__MODULE__{
       node_id: node_specs.node_id,
       type: node_specs.type,
       version: node_specs.version,
