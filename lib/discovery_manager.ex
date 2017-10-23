@@ -6,16 +6,16 @@ defmodule MySensors.DiscoveryManager do
   The implementation relies on a Supervisor notifying GenServers using `GenServer.cast(pid, msg)`
   """
 
-  use Supervisor
+  use Supervisor, start: {__MODULE__, :start_link, []}
   require Logger
 
 
   @doc """
   Start the manager
   """
-  @spec start_link(nil) :: GenServer.on_start
-  def start_link(_) do
-    Supervisor.start_link(__MODULE__, [], name: __MODULE__)
+  @spec start_link() :: GenServer.on_start
+  def start_link() do
+    Supervisor.start_link(__MODULE__, :ok, name: __MODULE__)
   end
 
 
@@ -71,7 +71,7 @@ defmodule MySensors.DiscoveryManager do
 
 
   # Initialize the manager
-  def init(_) do
+  def init(:ok) do
     Supervisor.init([], strategy: :one_for_one)
   end
 
