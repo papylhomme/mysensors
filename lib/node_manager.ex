@@ -2,11 +2,12 @@ defmodule MySensors.NodeManager do
 
   alias MySensors.Node
 
+
   @moduledoc """
   Module responsible to track nodes on the network
   """
 
-  use GenServer
+  use GenServer, start: {__MODULE__, :start_link, []}
 
   require Logger
 
@@ -16,9 +17,9 @@ defmodule MySensors.NodeManager do
   @doc """
   Start the manager
   """
-  @spec start_link(any) :: GenServer.on_start
-  def start_link(_) do
-    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
+  @spec start_link() :: GenServer.on_start
+  def start_link() do
+    GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
   end
 
 
@@ -43,14 +44,14 @@ defmodule MySensors.NodeManager do
   @doc """
   List the known nodes
   """
-  @spec nodes() :: [Node.t]
+  @spec nodes() :: [MySensors.Node.t]
   def nodes do
     GenServer.call(__MODULE__, :list_nodes)
   end
 
 
   # Initialize the manager
-  def init(_) do
+  def init(:ok) do
     {:ok, tid} = :dets.open_file(@db, [ram_file: true, auto_save: 10])
     {:ok, supervisor} = Supervisor.start_link([], strategy: :one_for_one, name: __MODULE__.Supervisor)
 
@@ -87,12 +88,16 @@ defmodule MySensors.NodeManager do
         :ok = :dets.insert(tid, {node_id, node_specs})
         _start_child(state, node_id)
 
+        Node.NodeDiscoveredEvent.new(node_specs)
+        |> MySensors.NodeEvents.on_node_event
+
       _ ->
         :ok = :dets.insert(tid, {node_id, node_specs})
 
         case _node_pid(state, node_id) do
-          nil -> nil
-          pid -> Node.on_specs_updated(pid, node_specs)
+          nil -> []
+          pid ->
+            Node.on_specs_updated(pid, node_specs)
         end
     end
 
@@ -101,6 +106,9 @@ defmodule MySensors.NodeManager do
 
 
   # Handle node event
+  #
+  # If an event comes for an unknown node, the event is discarded and
+  # a request for presentation is sent to the node.
   def handle_cast({:node_event, msg = %{node_id: node_id}}, state) do
     case :dets.lookup(state.table, node_id) do
       []  -> :ok = MySensors.PresentationManager.request_presentation(node_id)
@@ -126,6 +134,5 @@ defmodule MySensors.NodeManager do
     Supervisor.which_children(state.supervisor)
     |> Enum.find_value(fn {id, pid, _, _} -> if id == node_id, do: pid, else: nil end)
   end
-
 
 end

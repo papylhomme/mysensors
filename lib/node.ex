@@ -6,6 +6,8 @@ defmodule MySensors.Node do
   A server to interract with a MySensors node
 
   TODO support offline/online/lastseen/heartbeat and such
+
+  TODO use a supervisor for child sensors ?
   """
 
   defstruct node_id: nil, type: nil, version: nil, sketch_name: nil, sketch_version: nil, sensors: %{}
@@ -22,13 +24,23 @@ defmodule MySensors.Node do
 
 
   @doc """
+  Helper generating an unique reference for the given node
+  """
+  @spec ref(Types.id) :: atom
+  def ref(node_id) do
+    "#{__MODULE__}#{node_id}" |> String.to_atom
+  end
+
+
+
+  @doc """
   Start a node using the given id
 
   On startup the node is loaded from storage
   """
   @spec start_link({any, Types.id}) :: GenServer.on_start
   def start_link({table, node_id}) do
-    GenServer.start_link(__MODULE__, {table, node_id}, [name: "#{__MODULE__}#{node_id}" |> String.to_atom])
+    GenServer.start_link(__MODULE__, {table, node_id}, [name: ref(node_id)])
   end
 
 
@@ -122,24 +134,76 @@ defmodule MySensors.Node do
 
 
   # Handle node specs updated
-  # TODO more robust change detectipn
+  # TODO more robust change detection
   def handle_cast({:specs_updated, node_specs}, state) do
-    if Map.size(state.sensors) == Map.size(node_specs.sensors) do
-      new_state = %{state |
-        type: node_specs.type,
-        version: node_specs.version,
-        sketch_name: node_specs.sketch_name,
-        sketch_version: node_specs.sketch_version,
-      }
+    res =
+      if Map.size(state.sensors) == Map.size(node_specs.sensors) do
+        new_state = %{state |
+          type: node_specs.type,
+          version: node_specs.version,
+          sketch_name: node_specs.sketch_name,
+          sketch_version: node_specs.sketch_version,
+        }
 
-      Logger.info "Node #{state.node_id} received a specs update"
+        Logger.info "Node #{state.node_id} received a specs update"
+        {:noreply, new_state}
+      else
+        Logger.warn "Node #{state.node_id} received incompatible specs update, restarting"
+        {:stop, {:shutdown, :specs_updated}, state}
+      end
 
-      {:noreply, new_state}
-    else
-      Logger.warn "Node #{state.node_id} received incompatible specs update, restarting"
-      {:stop, {:shutdown, :specs_updated}, state}
-    end
+    __MODULE__.NodeUpdatedEvent.new(node_specs)
+    |> MySensors.NodeEvents.on_node_event
+
+    res
   end
 
+
+  defmodule NodeDiscoveredEvent do
+
+    @moduledoc """
+    An event generated when a new node is discovered
+    """
+
+    # Event struct
+    defstruct node_id: nil, specs: nil
+
+    @typedoc "The event struct"
+    @type t :: %__MODULE__{node_id: Types.id, specs: MySensors.Node.t}
+
+
+    @doc """
+    Create a NodeDiscoveredEvent
+    """
+    @spec new(MySensors.Node.t) :: t
+    def new(specs) do
+      %__MODULE__{node_id: specs.node_id, specs: specs}
+    end
+
+  end
+
+
+  defmodule NodeUpdatedEvent do
+
+    @moduledoc """
+    An event generated when a node is updated
+    """
+
+    # Event struct
+    defstruct node_id: nil, specs: nil
+
+    @typedoc "The event struct"
+    @type t :: %__MODULE__{node_id: Types.id, specs: MySensors.Node.t}
+
+
+    @doc """
+    Create a NodeUpdatedEvent
+    """
+    @spec new(MySensors.Node.t) :: t
+    def new(specs) do
+      %__MODULE__{node_id: specs.node_id, specs: specs}
+    end
+
+  end
 
 end

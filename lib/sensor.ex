@@ -1,11 +1,14 @@
 defmodule MySensors.Sensor do
 
   alias MySensors.Types
+  alias __MODULE__.ValueUpdatedEvent
+
 
   @moduledoc """
   A server to interract with a MySensors sensor
   """
 
+  # The sensor struct
   defstruct id: nil, node_id: nil, type: nil, desc: nil, data: %{}
 
   @typedoc "A sensor specs"
@@ -25,13 +28,21 @@ defmodule MySensors.Sensor do
   require Logger
 
 
+  @doc """
+  Helper generating an unique reference for the given node/sensor ids
+  """
+  @spec ref(Types.id, Types.id) :: atom
+  def ref(node_id, child_sensor_id) do
+    "#{MySensors.Node}#{node_id}.Sensor#{child_sensor_id}" |> String.to_atom
+  end
+
 
   @doc """
   Start the server
   """
   @spec start_link(Types.id, specs) :: GenServer.on_start
   def start_link(node_id, sensor_specs = {sensor_id, _, _}) do
-    GenServer.start_link(__MODULE__, {node_id, sensor_specs}, [name: "#{MySensors.Node}#{node_id}.Sensor#{sensor_id}" |> String.to_atom])
+    GenServer.start_link(__MODULE__, {node_id, sensor_specs}, [name: ref(node_id, sensor_id)])
   end
 
 
@@ -115,10 +126,18 @@ defmodule MySensors.Sensor do
 
 
   # Handle sensor values
-  def handle_cast({:sensor_event, %{command: :set, type: type, payload: value}}, state) do
+  def handle_cast({:sensor_event, event = %{command: :set, type: type, payload: value}}, state) do
     Logger.debug "#{_sensor_name(state)} received new #{type} value: #{value}"
 
-    data = Map.put(state.data, type, {value, DateTime.utc_now})
+    old_value = Map.get(state.data, type)
+
+    new_value = {value, DateTime.utc_now}
+    data = Map.put(state.data, type, new_value)
+
+    event
+    |> ValueUpdatedEvent.new(old_value, new_value)
+    |> MySensors.SensorEvents.on_sensor_event()
+
     {:noreply, %__MODULE__{state | data: data}}
   end
 
@@ -133,6 +152,37 @@ defmodule MySensors.Sensor do
   # Create a readable sensor name
   defp _sensor_name(state) do
     "Node#{state.node_id}/Sensor#{state.id} (#{state.type})"
+  end
+
+
+  defmodule ValueUpdatedEvent do
+
+    alias MySensors.Sensor
+
+    @moduledoc """
+    An event generated when a sensor updates one of its values
+    """
+
+    # Event struct
+    defstruct node_id: nil, sensor_id: nil, type: nil, old: nil, new: {nil, nil}
+
+    @typedoc "The value updated event struct"
+    @type t :: %__MODULE__{node_id: Types.id, sensor_id: Types.id, type: Types.type, old: nil | Sensor.data, new: Sensor.data}
+
+
+    @doc """
+    Create a ValueUpdatedEvent from a MySensors sensor update event
+    """
+    @spec new(MySensors.Message.sensor_updated, Sensor.data, Sensor.data) :: t
+    def new(mysensors_event, old_value, new_value) do
+      %__MODULE__{
+        node_id: mysensors_event.node_id,
+        sensor_id: mysensors_event.child_sensor_id,
+        type: mysensors_event.type,
+        old: old_value,
+        new: new_value
+      }
+    end
   end
 
 end
