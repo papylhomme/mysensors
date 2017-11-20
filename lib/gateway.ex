@@ -4,15 +4,21 @@ defmodule MySensors.Gateway do
   alias MySensors.Message
 
   @moduledoc """
-  A server handling communication with MySensors Serial Gateway
+  A server handling communication with a [MySensors Serial Gateway](https://www.mysensors.org/build/serial_gateway)
+
+  In case the serial device is not present when starting, the server checks
+  regularly to reconnect if possible. It also handles gracefuly disconnection
+  and reconnect when the device is back.
 
   TODO handle acks
   """
 
 
   use GenServer
-
   require Logger
+
+
+  @retry_timeout 5000
 
 
   @doc """
@@ -71,11 +77,12 @@ defmodule MySensors.Gateway do
 
   # Initialize the serial connection at server startup
   def init(serial_dev) do
-    Logger.debug "Starting MySensors serial gateway on #{serial_dev}"
-    #:ok = Nerves.UART.open(Nerves.UART, serial_dev, speed: 115200, active: true, framing: {Nerves.UART.Framing.Line, separator: "\n"})
-    Nerves.UART.open(Nerves.UART, serial_dev, speed: 115200, active: true, framing: {Nerves.UART.Framing.Line, separator: "\n"})
+    Logger.info "Starting MySensors serial gateway on #{serial_dev}"
 
-    {:ok, %{serial_dev: serial_dev}}
+    case _try_connect(serial_dev) do
+      :ok -> {:ok, %{serial_dev: serial_dev, status: :connected}}
+      _   -> {:ok, %{serial_dev: serial_dev, status: :disconnected}, @retry_timeout}
+    end
   end
 
 
@@ -92,19 +99,38 @@ defmodule MySensors.Gateway do
   end
 
 
-  # Handle incoming messages
-  def handle_info(msg = {:nerves_uart, _, _}, state) do
-    serial_dev = state.serial_dev
-    case msg do
-      {:nerves_uart, ^serial_dev, {:error, e}} ->
-        Logger.error "Unable to open UART: #{inspect e}"
+  # Handle timeout to reconnect the UART
+  def handle_info(:timeout, state = %{status: :disconnected, serial_dev: serial_dev}) do
+    case _try_connect(serial_dev) do
+      :ok -> {:noreply, %{state | status: :connected}}
+      _   -> {:noreply, state, @retry_timeout}
+    end
+  end
 
+
+  # Handle UART closed message
+  def handle_info({:nerves_uart, _, {:error, :eio}}, state) do
+    Logger.warn "UART closed !"
+    {:noreply, %{state | status: :disconnected}, @retry_timeout}
+  end
+
+
+  # Handle incoming messages
+  def handle_info(msg = {:nerves_uart, _, _}, state = %{serial_dev: serial_dev}) do
+    case msg do
+      # error
+      {:nerves_uart, ^serial_dev, {:error, e}} ->
+        Logger.error "UART error: #{inspect e}"
+
+      # message received
       {:nerves_uart, ^serial_dev, str} ->
         #TODO handle errors
         str
         |> MySensors.Message.parse
         |> _process_message
 
+
+      # unknown message
       _ ->
         Logger.warn "Unknown message: #{inspect msg}"
     end
@@ -117,6 +143,27 @@ defmodule MySensors.Gateway do
   def handle_info(msg, state) do
     Logger.warn "Unknown message: #{inspect msg}"
     {:noreply, state}
+  end
+
+
+  # Try to connect to the serial gateway
+  defp _try_connect(serial_dev) do
+    case Map.has_key?(Nerves.UART.enumerate(), serial_dev) do
+      false ->
+        Logger.debug "Serial device #{serial_dev} not present, will retry later"
+        :not_present
+
+      true  ->
+        case Nerves.UART.open(Nerves.UART, serial_dev, speed: 115200, active: true, framing: {Nerves.UART.Framing.Line, separator: "\n"}) do
+          :ok ->
+            Logger.info "Connected to serial device #{serial_dev}"
+            :ok
+
+          {:error, reason} ->
+            Logger.error "Error connecting to serial device #{serial_dev}: #{inspect reason}"
+            :error
+        end
+    end
   end
 
 
