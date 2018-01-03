@@ -11,7 +11,6 @@ defmodule MySensors.NodeManager do
 
   require Logger
 
-  @db "#{__MODULE__}.db"
 
 
   @doc """
@@ -52,7 +51,9 @@ defmodule MySensors.NodeManager do
 
   # Initialize the manager
   def init(:ok) do
-    {:ok, tid} = :dets.open_file(@db, [ram_file: true, auto_save: 10])
+    nodes_db = Path.join(Application.get_env(:mysensors, :data_dir, "./"), "nodes.db")
+
+    {:ok, tid} = :dets.open_file(nodes_db, [ram_file: true, auto_save: 10])
     {:ok, supervisor} = Supervisor.start_link([], strategy: :one_for_one, name: __MODULE__.Supervisor)
 
     state = %{table: tid, supervisor: supervisor}
