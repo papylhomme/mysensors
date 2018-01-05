@@ -4,46 +4,34 @@ defmodule MySensors.Gateway do
   alias MySensors.Message
 
   @moduledoc """
-  A server handling communication with a [MySensors Serial Gateway](https://www.mysensors.org/build/serial_gateway)
+  A server handling communication with a [MySensors Gateway](https://www.mysensors.org/download/serial_api_20)
 
-  In case the serial device is not present when starting, the server checks
-  regularly to reconnect if possible. It also handles gracefuly disconnection
-  and reconnect when the device is back.
+  **TODO**
 
-  TODO handle acks
+  - handle acks
   """
 
 
-  use GenServer
+  use GenServer, start: {__MODULE__, :start_link, []}
   require Logger
 
 
-  @retry_timeout 5000
+  #########
+  #  API
+  #########
 
 
   @doc """
   Start the server on the given serial device
   """
-  @spec start_link(String.t) :: GenServer.on_start
-  def start_link(serial_dev) do
-    GenServer.start_link(__MODULE__, serial_dev, name: __MODULE__)
+  @spec start_link :: GenServer.on_start
+  def start_link do
+    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
   end
 
 
   @doc """
-  DEV simulate a message from the gateway
-
-  The message is injected directly in the pipeline using `Kernel.send/2`
-  """
-  @spec simulate(Message.t) :: :ok
-  def simulate(msg) do
-    send __MODULE__, {:nerves_uart, Application.get_env(:mysensors, :uart), msg}
-    :ok
-  end
-
-
-  @doc """
-  Send a message via the gateway
+  Send a message to the MySensors network
   """
   @spec send_message(Message.t) :: :ok
   def send_message(message) do
@@ -52,7 +40,7 @@ defmodule MySensors.Gateway do
 
 
   @doc """
-  Send a message via the gateway
+  Send a message to the MySensors network
   """
   @spec send_message(Types.id, Types.id, Types.command, boolean, Types.type, String.t) :: :ok
   def send_message(node_id, child_sensor_id, command, ack, type, payload \\ "") do
@@ -75,14 +63,10 @@ defmodule MySensors.Gateway do
   #################
 
 
-  # Initialize the serial connection at server startup
-  def init(serial_dev) do
-    Logger.info "Starting MySensors serial gateway on #{serial_dev}"
-
-    case _try_connect(serial_dev) do
-      :ok -> {:ok, %{serial_dev: serial_dev, status: :connected}}
-      _   -> {:ok, %{serial_dev: serial_dev, status: :disconnected}, @retry_timeout}
-    end
+  # Init
+  def init(nil) do
+    Phoenix.PubSub.subscribe MySensors.PubSub, "incoming"
+    {:ok, %{}}
   end
 
 
@@ -99,41 +83,12 @@ defmodule MySensors.Gateway do
   end
 
 
-  # Handle timeout to reconnect the UART
-  def handle_info(:timeout, state = %{status: :disconnected, serial_dev: serial_dev}) do
-    case _try_connect(serial_dev) do
-      :ok -> {:noreply, %{state | status: :connected}}
-      _   -> {:noreply, state, @retry_timeout}
-    end
-  end
-
-
-  # Handle UART closed message
-  def handle_info({:nerves_uart, _, {:error, :eio}}, state) do
-    Logger.warn "UART closed !"
-    {:noreply, %{state | status: :disconnected}, @retry_timeout}
-  end
-
-
   # Handle incoming messages
-  def handle_info(msg = {:nerves_uart, _, _}, state = %{serial_dev: serial_dev}) do
-    case msg do
-      # error
-      {:nerves_uart, ^serial_dev, {:error, e}} ->
-        Logger.error "UART error: #{inspect e}"
-
-      # message received
-      {:nerves_uart, ^serial_dev, str} ->
-        #TODO handle errors
-        str
-        |> MySensors.Message.parse
-        |> _process_message
-
-
-      # unknown message
-      _ ->
-        Logger.warn "Unknown message: #{inspect msg}"
-    end
+  def handle_info({:mysensors_incoming, str}, state) do
+    #TODO handle errors
+    str
+    |> MySensors.Message.parse
+    |> _process_message
 
     {:noreply, state}
   end
@@ -143,27 +98,6 @@ defmodule MySensors.Gateway do
   def handle_info(msg, state) do
     Logger.warn "Unknown message: #{inspect msg}"
     {:noreply, state}
-  end
-
-
-  # Try to connect to the serial gateway
-  defp _try_connect(serial_dev) do
-    case Map.has_key?(Nerves.UART.enumerate(), serial_dev) do
-      false ->
-        Logger.debug "Serial device #{serial_dev} not present, will retry later"
-        :not_present
-
-      true  ->
-        case Nerves.UART.open(Nerves.UART, serial_dev, speed: 115200, active: true, framing: {Nerves.UART.Framing.Line, separator: "\n"}) do
-          :ok ->
-            Logger.info "Connected to serial device #{serial_dev}"
-            :ok
-
-          {:error, reason} ->
-            Logger.error "Error connecting to serial device #{serial_dev}: #{inspect reason}"
-            :error
-        end
-    end
   end
 
 
@@ -247,20 +181,21 @@ defmodule MySensors.Gateway do
   end
 
 
-  # Send a message to the gateway
-  defp _send_message(msg) do
-    s = MySensors.Message.serialize(msg)
-
-    Logger.debug fn -> "Sending message #{msg}-> RAW: #{s}" end
-    Nerves.UART.write(Nerves.UART, "#{s}\n")
-  end
-
-
   # Construct and send a message to the gateway
   defp _send_message(node_id, child_sensor_id, command, ack, type, payload \\ "") do
     MySensors.Message.new(node_id, child_sensor_id, command, ack, type, payload)
     |> _send_message
   end
+
+
+  # Send a message to the gateway
+  defp _send_message(msg) do
+    str = MySensors.Message.serialize(msg)
+
+    Logger.debug fn -> "Sending message #{msg}-> RAW: #{str}" end
+    Phoenix.PubSub.broadcast MySensors.PubSub, "outgoing", {:mysensors_outgoing, str}
+  end
+
 
 end
 

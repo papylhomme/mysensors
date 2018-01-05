@@ -11,7 +11,22 @@ defmodule MySensors do
   Start the application
   """
   def start(_type, _args) do
-    MySensors.Supervisor.start_link
+    import Supervisor.Spec, warn: false
+
+    children = [
+      supervisor(Phoenix.PubSub.PG2, [MySensors.PubSub, []]),
+      MySensors.NodeEvents,
+      MySensors.SensorEvents,
+      MySensors.NodeManager,
+      MySensors.PresentationManager,
+      MySensors.DiscoveryManager,
+      MySensors.Gateway,
+      {Nerves.UART, [name: Nerves.UART]},
+      MySensors.SerialBridge,
+    ]
+
+    opts = [strategy: :one_for_one, name: MySensors.Supervisor]
+    Supervisor.start_link(children, opts)
   end
 
 end
