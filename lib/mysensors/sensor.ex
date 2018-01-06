@@ -151,7 +151,7 @@ defmodule MySensors.Sensor do
 
   # Create a readable sensor name
   defp _sensor_name(state) do
-    "Node#{state.node_id}/Sensor#{state.id} (#{state.type})"
+    "Sensor #{state.node_id}##{state.id} (#{state.type})"
   end
 
 

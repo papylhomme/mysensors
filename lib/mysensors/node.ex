@@ -10,7 +10,15 @@ defmodule MySensors.Node do
   TODO use a supervisor for child sensors ?
   """
 
-  defstruct node_id: nil, type: nil, version: nil, sketch_name: nil, sketch_version: nil, sensors: %{}
+  defstruct node_id: nil,
+    type: nil,
+    version: nil,
+    sketch_name: nil,
+    sketch_version: nil,
+    status: :unknown,
+    battery: nil,
+    last_seen: nil,
+    sensors: %{}
 
   @typedoc "Sensors info"
   @type sensors :: %{optional(Types.id) => pid}
@@ -63,15 +71,6 @@ defmodule MySensors.Node do
 
 
   @doc """
-  Handle a node event
-  """
-  @spec on_event(pid, MySensors.Message.t) :: :ok
-  def on_event(pid, msg) do
-    GenServer.cast(pid, {:node_event, msg})
-  end
-
-
-  @doc """
   Handle a specs updated event
   """
   @spec on_specs_updated(pid, t) :: :ok
@@ -82,6 +81,8 @@ defmodule MySensors.Node do
 
   # Initialize the server
   def init({table, node_id}) do
+    Phoenix.PubSub.subscribe MySensors.PubSub, "node_#{node_id}"
+
     [{_id, node_specs}] = :dets.lookup(table, node_id)
 
     sensors =
@@ -121,18 +122,6 @@ defmodule MySensors.Node do
   end
 
 
-  # Handle node events
-  def handle_cast({:node_event, msg = %{child_sensor_id: sensor_id}}, state) do
-    if Map.has_key?(state.sensors, sensor_id) do
-      MySensors.Sensor.on_event(state.sensors[sensor_id], msg)
-    else
-      Logger.warn "Node #{state.node_id} handling unexpected event #{msg}"
-    end
-
-    {:noreply, state}
-  end
-
-
   # Handle node specs updated
   # TODO more robust change detection
   def handle_cast({:specs_updated, node_specs}, state) do
@@ -157,6 +146,62 @@ defmodule MySensors.Node do
 
     res
   end
+
+
+  # Handle battery level
+  def handle_info({:mysensors_message, %{command: :internal, type: I_BATTERY_LEVEL, child_sensor_id: 255, payload: payload}}, state) do
+    Logger.debug "Node #{state.node_id} handling battery level: #{payload}"
+    new_state = %{state | battery: payload}
+
+    __MODULE__.NodeUpdatedEvent.new(new_state)
+    |> MySensors.NodeEvents.on_node_event
+
+    {:noreply, new_state}
+  end
+
+
+  # Handle heartbeat
+  def handle_info({:mysensors_message, %{command: :internal, type: I_HEARTBEAT_RESPONSE, child_sensor_id: 255}}, state) do
+    Logger.debug "Node #{state.node_id} handling heartbeat"
+    new_state = %{state | last_seen: DateTime.utc_now}
+
+    __MODULE__.NodeUpdatedEvent.new(new_state)
+    |> MySensors.NodeEvents.on_node_event
+
+    {:noreply, new_state}
+  end
+
+
+  # Handle running status
+  def handle_info({:mysensors_message, %{command: :set, type: V_CUSTOM, child_sensor_id: 200, payload: payload}}, state) do
+    Logger.debug "Node #{state.node_id} handling status: #{payload}"
+    new_state = %{state | status: payload}
+
+    __MODULE__.NodeUpdatedEvent.new(new_state)
+    |> MySensors.NodeEvents.on_node_event
+
+    {:noreply, new_state}
+  end
+
+
+  # Handle incoming messages
+  def handle_info({:mysensors_message, message = %{child_sensor_id: sensor_id}}, state) do
+    if Map.has_key?(state.sensors, sensor_id) do
+      MySensors.Sensor.on_event(state.sensors[sensor_id], message)
+    else
+      Logger.warn "Node #{state.node_id} handling unexpected event #{message}"
+    end
+
+    {:noreply, state}
+  end
+
+
+  # Handle unexpected messages
+  def handle_info(msg, state) do
+    Logger.warn "Node #{state.node_id} handling unexpected message #{inspect msg}"
+    {:noreply, state}
+  end
+
 
 
   defmodule NodeDiscoveredEvent do

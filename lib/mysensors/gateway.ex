@@ -84,11 +84,9 @@ defmodule MySensors.Gateway do
 
 
   # Handle incoming messages
-  def handle_info({:mysensors_incoming, str}, state) do
-    #TODO handle errors
-    str
-    |> MySensors.Message.parse
-    |> _process_message
+  def handle_info({:mysensors_incoming, message}, state) do
+    #Logger.debug "Received message: #{message}"
+    _process_message(message)
 
     {:noreply, state}
   end
@@ -101,12 +99,6 @@ defmodule MySensors.Gateway do
   end
 
 
-  # Handle gateway ready
-  defp _process_message(%{command: :internal, type: I_GATEWAY_READY}) do
-    Logger.info "Gateway ready !"
-  end
-
-
   # Process a presentation message
   defp _process_message(msg = %{command: :presentation}) do
     Logger.debug "Presentation event #{msg}"
@@ -114,16 +106,16 @@ defmodule MySensors.Gateway do
   end
 
 
-  # Process a set message
-  defp _process_message(msg = %{command: :set}) do
-    Logger.debug "Node event #{msg}"
-    MySensors.NodeManager.on_node_event(msg)
+
+  # Handle gateway ready
+  defp _process_message(%{command: :internal, type: I_GATEWAY_READY}) do
+    Logger.info "Gateway ready !"
   end
 
 
   # Log from the gateway
   defp _process_message(msg = %{command: :internal, type: I_LOG_MESSAGE}) do
-    Logger.debug "GWLOG #{msg.payload}"
+    Phoenix.PubSub.broadcast MySensors.PubSub, "gwlog", {:mysensors_gwlog, msg.payload}
   end
 
 
@@ -163,9 +155,9 @@ defmodule MySensors.Gateway do
   end
 
 
-  # Fallback for internal commands
-  defp _process_message(msg = %{command: :internal}) do
-    Logger.debug "Internal event #{msg}"
+  # Forward other message to their related node
+  defp _process_message(msg = %{node_id: node_id}) do
+    Phoenix.PubSub.broadcast MySensors.PubSub, "node_#{node_id}", {:mysensors_message, msg}
   end
 
 
@@ -175,9 +167,9 @@ defmodule MySensors.Gateway do
   end
 
 
-  # Process an unknown message
+  # Process unexpected messages
   defp _process_message(msg) do
-    Logger.warn "Unknown event #{inspect msg}"
+    Logger.debug "Unexpected message: #{inspect msg}"
   end
 
 

@@ -92,7 +92,7 @@ defmodule MySensors.PresentationManager do
 
 
   # Handle accumulator finishing
-  # TODO update only of the accumulator is not empty/unused
+  # TODO update only if the accumulator is not empty/unused
   def handle_info({:DOWN, _, _, _, {:shutdown, acc}}, state) do
     Logger.debug "Presentation accumulator for node #{acc.node_id} finishing #{inspect acc}"
     :ok = MySensors.NodeManager.on_node_presentation(acc)
@@ -101,7 +101,8 @@ defmodule MySensors.PresentationManager do
 
 
   # Fallback for handle_info
-  def handle_info(_, state) do
+  def handle_info(msg, state) do
+    Logger.warn "Received unexpected message: #{inspect msg}"
     {:noreply, state}
   end
 

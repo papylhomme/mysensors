@@ -32,15 +32,6 @@ defmodule MySensors.NodeManager do
 
 
   @doc """
-  Process a node event
-  """
-  @spec on_node_event(MySensors.Message.t) :: :ok
-  def on_node_event(msg) do
-    GenServer.cast(__MODULE__, {:node_event, msg})
-  end
-
-
-  @doc """
   List the known nodes
   """
   @spec nodes() :: [MySensors.Node.t]
@@ -63,6 +54,8 @@ defmodule MySensors.NodeManager do
       _start_child(state, id)
       :continue
     end)
+
+    Phoenix.PubSub.subscribe MySensors.PubSub, "incoming"
 
     {:ok, state}
   end
@@ -106,20 +99,20 @@ defmodule MySensors.NodeManager do
   end
 
 
-  # Handle node event
-  #
-  # If an event comes for an unknown node, the event is discarded and
-  # a request for presentation is sent to the node.
-  def handle_cast({:node_event, msg = %{node_id: node_id}}, state) do
+  # Handle incoming messages
+  def handle_info({:mysensors_incoming, _message = %{node_id: node_id}}, state) do
     case :dets.lookup(state.table, node_id) do
       []  -> :ok = MySensors.PresentationManager.request_presentation(node_id)
-      _   ->
-        case _node_pid(state, node_id) do
-          nil   -> Logger.warn "Received event for unknow node #{node_id}: #{msg}"
-          node  -> Node.on_event(node, msg)
-        end
+      _   -> nil # node is already known, nothing to do
     end
 
+    {:noreply, state}
+  end
+
+
+  # Handle unexpected messages
+  def handle_info(msg, state) do
+    Logger.debug "Received unexpected message: #{inspect msg}"
     {:noreply, state}
   end
 

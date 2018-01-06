@@ -85,7 +85,7 @@ defmodule MySensors.SerialBridge do
 
       # message received
       {:nerves_uart, ^serial_dev, str} ->
-        Phoenix.PubSub.broadcast MySensors.PubSub, "incoming", {:mysensors_incoming, str}
+        Phoenix.PubSub.broadcast MySensors.PubSub, "incoming", {:mysensors_incoming, MySensors.Message.parse(str)}
 
       # unknown message
       _ ->
