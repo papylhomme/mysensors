@@ -28,6 +28,10 @@ defmodule MySensors.Sensor do
   require Logger
 
 
+  #########
+  #  API
+  #########
+
   @doc """
   Helper generating an unique reference for the given node/sensor ids
   """
@@ -91,6 +95,9 @@ defmodule MySensors.Sensor do
   end
 
 
+  ###############
+  #  Internals
+  ###############
 
   # Initialize the server
   def init({node_id, {id, type, desc}}) do
@@ -118,8 +125,10 @@ defmodule MySensors.Sensor do
 
   # Handle sensor commands
   def handle_cast({:sensor_command, command, ack, type, payload}, state) do
-    MySensors.Message.new(state.node_id, state.id, command, ack, type, payload)
-    |> MySensors.Gateway.send_message
+    msg = MySensors.Message.new(state.node_id, state.id, command, ack, type, payload)
+
+    MySensors.Node.ref(state.node_id)
+    |> MySensors.Node.send_message(msg)
 
     {:noreply, state}
   end

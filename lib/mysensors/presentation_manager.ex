@@ -181,6 +181,12 @@ defmodule MySensors.PresentationManager do
     end
 
 
+    # Skip the NodeManager CUSTOM sensor (status is handled internally by `MySensors.Node`)
+    def handle_cast(%{command: :presentation, child_sensor_id: 200, type: S_CUSTOM}, state) do
+      {:noreply, state, @timeout}
+    end
+
+
     # Handle a sensor presentation event
     def handle_cast(%{command: :presentation, child_sensor_id: sensor_id, type: sensor_type, payload: sensor_desc}, state) do
       sensors = Map.put(state.sensors, sensor_id, {sensor_id, sensor_type, sensor_desc})

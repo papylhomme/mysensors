@@ -90,7 +90,7 @@ defmodule MySensors.NodeManager do
         case _node_pid(state, node_id) do
           nil -> []
           pid ->
-            Node.on_specs_updated(pid, node_specs)
+            Node.update_specs(pid, node_specs)
         end
     end
 

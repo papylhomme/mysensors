@@ -6,10 +6,6 @@ defmodule MySensors.Node do
 
   @moduledoc """
   A server to interract with a MySensors node
-
-  TODO support offline/online/lastseen/heartbeat and such
-
-  TODO use a supervisor for child sensors ?
   """
 
   defstruct node_id: nil,
@@ -33,6 +29,11 @@ defmodule MySensors.Node do
   require Logger
 
 
+
+  #########
+  #  API
+  #########
+
   @doc """
   Helper generating an unique reference for the given node
   """
@@ -40,7 +41,6 @@ defmodule MySensors.Node do
   def ref(node_id) do
     "#{__MODULE__}#{node_id}" |> String.to_atom
   end
-
 
 
   @doc """
@@ -75,11 +75,27 @@ defmodule MySensors.Node do
   @doc """
   Handle a specs updated event
   """
-  @spec on_specs_updated(pid, t) :: :ok
-  def on_specs_updated(pid, specs) do
-    GenServer.cast(pid, {:specs_updated, specs})
+  @spec update_specs(pid, t) :: :ok
+  def update_specs(pid, specs) do
+    GenServer.cast(pid, {:update_specs, specs})
   end
 
+
+  @doc """
+  Send a message to the node
+
+  For nodes reporting their running status (using [NodeManager](https://www.mysensors.org/download/node-manager)
+  service messages), messages are queued and sent when the node awakes.
+  """
+  @spec send_message(pid, MySensors.Message.t) :: :ok
+  def send_message(pid, message) do
+    GenServer.cast(pid, {:send_message, message})
+  end
+
+
+  ###############
+  #  Internals
+  ###############
 
   # Initialize the server
   def init({table, node_id}) do
@@ -95,27 +111,30 @@ defmodule MySensors.Node do
 
     Logger.info "New node #{node_specs.node_id} online (#{inspect node_specs.sensors})"
 
-    {:ok, %__MODULE__{
-      node_id: node_specs.node_id,
-      type: node_specs.type,
-      version: node_specs.version,
-      sketch_name: node_specs.sketch_name,
-      sketch_version: node_specs.sketch_version,
-      sensors: sensors}
+    {:ok, %{
+      message_queue: [],
+      node: %__MODULE__{
+        node_id: node_specs.node_id,
+        type: node_specs.type,
+        version: node_specs.version,
+        sketch_name: node_specs.sketch_name,
+        sketch_version: node_specs.sketch_version,
+        sensors: sensors}
+      }
     }
   end
 
 
   # Handle info request
   def handle_call(:info, _from, state) do
-    {:reply, state, state}
+    {:reply, state.node, state}
   end
 
 
   # Handle list_sensors
   def handle_call(:list_sensors, _from, state) do
     res =
-      state.sensors
+      state.node.sensors
       |> Enum.map(fn {_id, pid} ->
         Sensor.info(pid)
       end)
@@ -124,22 +143,22 @@ defmodule MySensors.Node do
   end
 
 
-  # Handle node specs updated
+  # Handle node specs update
   # TODO more robust change detection
-  def handle_cast({:specs_updated, node_specs}, state) do
+  def handle_cast({:update_specs, node_specs}, state = %{node: node}) do
     res =
-      if Map.size(state.sensors) == Map.size(node_specs.sensors) do
-        new_state = %{state |
+      if Map.size(node.sensors) == Map.size(node_specs.sensors) do
+        new_state = put_in(state, [:node], %{node |
           type: node_specs.type,
           version: node_specs.version,
           sketch_name: node_specs.sketch_name,
           sketch_version: node_specs.sketch_version,
-        }
+        })
 
-        Logger.info "Node #{state.node_id} received a specs update"
+        Logger.info "Node #{node.node_id} received a specs update"
         {:noreply, new_state}
       else
-        Logger.warn "Node #{state.node_id} received incompatible specs update, restarting"
+        Logger.warn "Node #{node.node_id} received incompatible specs update, restarting"
         {:stop, {:shutdown, :specs_updated}, state}
       end
 
@@ -148,45 +167,67 @@ defmodule MySensors.Node do
   end
 
 
+  # Handle send message
+  def handle_cast({:send_message, message}, state = %{node: node, message_queue: message_queue}) do
+    case node do
+      # when node is sleeping, queue the message
+      %{status: "SLEEPING"} ->
+        Logger.debug "Node #{node.node_id} queuing message #{message}"
+        {:noreply, %{state | message_queue: message_queue ++ [message]}}
+
+      _ ->
+        message
+        |> MySensors.Gateway.send_message
+
+        {:noreply, state}
+    end
+  end
+
+
   # Handle battery level
-  def handle_info({:mysensors_message, %{command: :internal, type: I_BATTERY_LEVEL, child_sensor_id: 255, payload: payload}}, state) do
-    Logger.debug "Node #{state.node_id} handling battery level: #{payload}"
+  def handle_info({:mysensors_message, %{command: :internal, type: I_BATTERY_LEVEL, child_sensor_id: 255, payload: payload}}, state = %{node: node}) do
+    Logger.debug "Node #{node.node_id} handling battery level: #{payload}"
 
-    new_state = %{state | battery: payload}
-    NodeUpdatedEvent.broadcast(new_state)
+    node = %{node | battery: payload}
+    NodeUpdatedEvent.broadcast(node)
 
-    {:noreply, new_state}
+    {:noreply, %{state | node: node}}
   end
 
 
   # Handle heartbeat
-  def handle_info({:mysensors_message, %{command: :internal, type: I_HEARTBEAT_RESPONSE, child_sensor_id: 255}}, state) do
-    Logger.debug "Node #{state.node_id} handling heartbeat"
+  def handle_info({:mysensors_message, %{command: :internal, type: I_HEARTBEAT_RESPONSE, child_sensor_id: 255}}, state = %{node: node}) do
+    Logger.debug "Node #{node.node_id} handling heartbeat"
 
-    new_state = %{state | last_seen: DateTime.utc_now}
-    NodeUpdatedEvent.broadcast(new_state)
+    node = %{node | last_seen: DateTime.utc_now}
+    NodeUpdatedEvent.broadcast(node)
 
-    {:noreply, new_state}
+    {:noreply, %{state | node: node}}
   end
 
 
-  # Handle running status
-  def handle_info({:mysensors_message, %{command: :set, type: V_CUSTOM, child_sensor_id: 200, payload: payload}}, state) do
-    Logger.debug "Node #{state.node_id} handling status: #{payload}"
+  # Handle running status provided by NodeManager's service messages
+  # When node awakes, flush the queued messages
+  def handle_info({:mysensors_message, %{command: :set, type: V_CUSTOM, child_sensor_id: 200, payload: payload}}, state = %{node: node}) do
+    Logger.debug "Node #{node.node_id} handling status: #{payload}"
 
-    new_state = %{state | status: payload}
-    NodeUpdatedEvent.broadcast(new_state)
+    # update status
+    node = %{node | status: payload}
+    NodeUpdatedEvent.broadcast(node)
 
-    {:noreply, new_state}
+    # flush queued message
+    Enum.each(state.message_queue, fn message -> message |> MySensors.Gateway.send_message end)
+
+    {:noreply, %{state | node: node, message_queue: []}}
   end
 
 
   # Handle incoming messages
-  def handle_info({:mysensors_message, message = %{child_sensor_id: sensor_id}}, state) do
-    if Map.has_key?(state.sensors, sensor_id) do
-      Sensor.on_event(state.sensors[sensor_id], message)
+  def handle_info({:mysensors_message, message = %{child_sensor_id: sensor_id}}, state = %{node: node}) do
+    if Map.has_key?(node.sensors, sensor_id) do
+      Sensor.on_event(node.sensors[sensor_id], message)
     else
-      Logger.warn "Node #{state.node_id} handling unexpected event #{message}"
+      Logger.warn "Node #{node.node_id} handling unexpected event #{message}"
     end
 
     {:noreply, state}
@@ -195,7 +236,7 @@ defmodule MySensors.Node do
 
   # Handle unexpected messages
   def handle_info(msg, state) do
-    Logger.warn "Node #{state.node_id} handling unexpected message #{inspect msg}"
+    Logger.warn "Node #{state.node.node_id} handling unexpected message #{inspect msg}"
     {:noreply, state}
   end
 
