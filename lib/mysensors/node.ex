@@ -1,6 +1,8 @@
 defmodule MySensors.Node do
 
   alias MySensors.Types
+  alias MySensors.Sensor
+  alias __MODULE__.NodeUpdatedEvent
 
   @moduledoc """
   A server to interract with a MySensors node
@@ -64,7 +66,7 @@ defmodule MySensors.Node do
   @doc """
   List the sensors
   """
-  @spec sensors(pid) :: [MySensors.Sensor.info]
+  @spec sensors(pid) :: [Sensor.info]
   def sensors(pid) do
     GenServer.call(pid, :list_sensors)
   end
@@ -87,7 +89,7 @@ defmodule MySensors.Node do
 
     sensors =
       for {id, sensor_specs} <- node_specs.sensors, into: %{} do
-        {:ok, pid} = MySensors.Sensor.start_link(node_specs.node_id, sensor_specs)
+        {:ok, pid} = Sensor.start_link(node_specs.node_id, sensor_specs)
         {id, pid}
       end
 
@@ -115,7 +117,7 @@ defmodule MySensors.Node do
     res =
       state.sensors
       |> Enum.map(fn {_id, pid} ->
-        MySensors.Sensor.info(pid)
+        Sensor.info(pid)
       end)
 
     {:reply, res, state}
@@ -141,9 +143,7 @@ defmodule MySensors.Node do
         {:stop, {:shutdown, :specs_updated}, state}
       end
 
-    __MODULE__.NodeUpdatedEvent.new(node_specs)
-    |> MySensors.NodeEvents.on_node_event
-
+    NodeUpdatedEvent.broadcast(node_specs)
     res
   end
 
@@ -151,10 +151,9 @@ defmodule MySensors.Node do
   # Handle battery level
   def handle_info({:mysensors_message, %{command: :internal, type: I_BATTERY_LEVEL, child_sensor_id: 255, payload: payload}}, state) do
     Logger.debug "Node #{state.node_id} handling battery level: #{payload}"
-    new_state = %{state | battery: payload}
 
-    __MODULE__.NodeUpdatedEvent.new(new_state)
-    |> MySensors.NodeEvents.on_node_event
+    new_state = %{state | battery: payload}
+    NodeUpdatedEvent.broadcast(new_state)
 
     {:noreply, new_state}
   end
@@ -163,10 +162,9 @@ defmodule MySensors.Node do
   # Handle heartbeat
   def handle_info({:mysensors_message, %{command: :internal, type: I_HEARTBEAT_RESPONSE, child_sensor_id: 255}}, state) do
     Logger.debug "Node #{state.node_id} handling heartbeat"
-    new_state = %{state | last_seen: DateTime.utc_now}
 
-    __MODULE__.NodeUpdatedEvent.new(new_state)
-    |> MySensors.NodeEvents.on_node_event
+    new_state = %{state | last_seen: DateTime.utc_now}
+    NodeUpdatedEvent.broadcast(new_state)
 
     {:noreply, new_state}
   end
@@ -175,10 +173,9 @@ defmodule MySensors.Node do
   # Handle running status
   def handle_info({:mysensors_message, %{command: :set, type: V_CUSTOM, child_sensor_id: 200, payload: payload}}, state) do
     Logger.debug "Node #{state.node_id} handling status: #{payload}"
-    new_state = %{state | status: payload}
 
-    __MODULE__.NodeUpdatedEvent.new(new_state)
-    |> MySensors.NodeEvents.on_node_event
+    new_state = %{state | status: payload}
+    NodeUpdatedEvent.broadcast(new_state)
 
     {:noreply, new_state}
   end
@@ -187,7 +184,7 @@ defmodule MySensors.Node do
   # Handle incoming messages
   def handle_info({:mysensors_message, message = %{child_sensor_id: sensor_id}}, state) do
     if Map.has_key?(state.sensors, sensor_id) do
-      MySensors.Sensor.on_event(state.sensors[sensor_id], message)
+      Sensor.on_event(state.sensors[sensor_id], message)
     else
       Logger.warn "Node #{state.node_id} handling unexpected event #{message}"
     end
@@ -225,6 +222,12 @@ defmodule MySensors.Node do
       %__MODULE__{node_id: specs.node_id, specs: specs}
     end
 
+
+    def broadcast(specs) do
+      event = new(specs)
+      Phoenix.PubSub.broadcast MySensors.PubSub, "nodes_events", {:mysensors, :node_event, event}
+    end
+
   end
 
 
@@ -247,6 +250,12 @@ defmodule MySensors.Node do
     @spec new(MySensors.Node.t) :: t
     def new(specs) do
       %__MODULE__{node_id: specs.node_id, specs: specs}
+    end
+
+
+    def broadcast(specs) do
+      event = new(specs)
+      Phoenix.PubSub.broadcast MySensors.PubSub, "nodes_events", {:mysensors, :node_event, event}
     end
 
   end

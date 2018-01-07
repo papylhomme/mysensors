@@ -135,8 +135,7 @@ defmodule MySensors.Sensor do
     data = Map.put(state.data, type, new_value)
 
     event
-    |> ValueUpdatedEvent.new(old_value, new_value)
-    |> MySensors.SensorEvents.on_sensor_event()
+    |> ValueUpdatedEvent.broadcast(old_value, new_value)
 
     {:noreply, %__MODULE__{state | data: data}}
   end
@@ -183,6 +182,13 @@ defmodule MySensors.Sensor do
         new: new_value
       }
     end
+
+
+    def broadcast(mysensors_event, old_value, new_value) do
+      event = new(mysensors_event, old_value, new_value)
+      Phoenix.PubSub.broadcast MySensors.PubSub, "sensors_events", {:mysensors, :sensor_event, event}
+    end
+
   end
 
 end

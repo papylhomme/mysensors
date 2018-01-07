@@ -15,8 +15,6 @@ defmodule MySensors do
 
     children = [
       supervisor(Phoenix.PubSub.PG2, [MySensors.PubSub, []]),
-      MySensors.NodeEvents,
-      MySensors.SensorEvents,
       MySensors.NodeManager,
       MySensors.PresentationManager,
       MySensors.DiscoveryManager,

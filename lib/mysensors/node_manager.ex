@@ -82,8 +82,7 @@ defmodule MySensors.NodeManager do
         :ok = :dets.insert(tid, {node_id, node_specs})
         _start_child(state, node_id)
 
-        Node.NodeDiscoveredEvent.new(node_specs)
-        |> MySensors.NodeEvents.on_node_event
+        Node.NodeDiscoveredEvent.broadcast(node_specs)
 
       _ ->
         :ok = :dets.insert(tid, {node_id, node_specs})
