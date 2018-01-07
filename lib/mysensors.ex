@@ -17,11 +17,23 @@ defmodule MySensors do
       supervisor(Phoenix.PubSub.PG2, [MySensors.PubSub, []]),
       MySensors.NodeManager,
       MySensors.PresentationManager,
-      MySensors.DiscoveryManager,
-      MySensors.Gateway,
-      {Nerves.UART, [name: Nerves.UART]},
-      MySensors.SerialBridge,
+      MySensors.DiscoveryManager
     ]
+
+    children =
+      case Application.get_env(:mysensors, :gateway, true) do
+        false -> children
+        true  -> children ++ [MySensors.Gateway]
+      end
+
+    children =
+      case Application.get_env(:mysensors, :serial, true) do
+        false -> children
+        true -> children ++ [
+          {Nerves.UART, [name: Nerves.UART]},
+          MySensors.SerialBridge
+        ]
+      end
 
     opts = [strategy: :one_for_one, name: MySensors.Supervisor]
     Supervisor.start_link(children, opts)
