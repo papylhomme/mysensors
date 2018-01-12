@@ -99,6 +99,12 @@ defmodule MySensors.Gateway do
   end
 
 
+  # Process acks
+  defp _process_message(msg = %{ack: :true}) do
+    Logger.debug "Handling ack: #{inspect msg}"
+  end
+
+
   # Process a presentation message
   defp _process_message(msg = %{command: :presentation}) do
     Logger.debug "Presentation event #{msg}"
