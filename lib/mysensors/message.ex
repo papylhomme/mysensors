@@ -27,8 +27,8 @@ defmodule MySensors.Message do
   @doc """
   Create a new message from parameters
   """
-  @spec new(Types.id, Types.id, Types.command, boolean, Types.type, String.t) :: t
-  def new(node_id, child_sensor_id, command, ack, type, payload) do
+  @spec new(Types.id, Types.id, Types.command, Types.type, String.t, boolean) :: t
+  def new(node_id, child_sensor_id, command, type, payload, ack) do
     %__MODULE__{
       node_id: node_id,
       child_sensor_id: child_sensor_id,

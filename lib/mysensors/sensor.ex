@@ -80,9 +80,9 @@ defmodule MySensors.Sensor do
   @doc """
   Send a command to the sensor asynchronously
   """
-  @spec command(pid, Types.command, boolean, Types.type, String.t) :: :ok
-  def command(pid, command, ack \\ false, type, payload \\ "") do
-    GenServer.cast(pid, {:sensor_command, command, ack, type, payload})
+  @spec command(pid, Types.command, Types.type, String.t, boolean) :: :ok
+  def command(pid, command, type, payload \\ "", ack \\ false) do
+    GenServer.cast(pid, {:sensor_command, command, type, payload, ack})
   end
 
 
@@ -124,8 +124,8 @@ defmodule MySensors.Sensor do
 
 
   # Handle sensor commands
-  def handle_cast({:sensor_command, command, ack, type, payload}, state) do
-    msg = MySensors.Message.new(state.node_id, state.id, command, ack, type, payload)
+  def handle_cast({:sensor_command, command, type, payload, ack}, state) do
+    msg = MySensors.Message.new(state.node_id, state.id, command, type, payload, ack)
 
     MySensors.Node.ref(state.node_id)
     |> MySensors.Node.send_message(msg)

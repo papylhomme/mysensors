@@ -42,9 +42,9 @@ defmodule MySensors.Gateway do
   @doc """
   Send a message to the MySensors network
   """
-  @spec send_message(Types.id, Types.id, Types.command, boolean, Types.type, String.t) :: :ok
-  def send_message(node_id, child_sensor_id, command, ack, type, payload \\ "") do
-    message = MySensors.Message.new(node_id, child_sensor_id, command, ack, type, payload)
+  @spec send_message(Types.id, Types.id, Types.command, Types.type, String.t, boolean) :: :ok
+  def send_message(node_id, child_sensor_id, command, type, payload \\ "", ack \\ false) do
+    message = MySensors.Message.new(node_id, child_sensor_id, command, type, payload, ack)
     GenServer.cast(__MODULE__, {:send, message})
   end
 
@@ -72,7 +72,7 @@ defmodule MySensors.Gateway do
 
   # Handle version call
   def handle_call({:version}, _from, state) do
-    {:reply, _send_message(0, 255, :internal, false, I_VERSION), state}
+    {:reply, _send_message(0, 255, :internal, I_VERSION), state}
   end
 
 
@@ -135,7 +135,7 @@ defmodule MySensors.Gateway do
   # Process time requests
   defp _process_message(msg = %{command: :internal, type: I_TIME}) do
     Logger.debug "Requesting controller time #{msg}"
-    _send_message(msg.node_id, msg.child_sensor_id, :internal, false, I_TIME, DateTime.utc_now |> DateTime.to_unix(:seconds))
+    _send_message(msg.node_id, msg.child_sensor_id, :internal, I_TIME, DateTime.utc_now |> DateTime.to_unix(:seconds))
   end
 
 
@@ -150,7 +150,7 @@ defmodule MySensors.Gateway do
         _         -> ""
       end
 
-    _send_message(msg.node_id, msg.child_sensor_id, :internal, false, I_CONFIG, payload)
+    _send_message(msg.node_id, msg.child_sensor_id, :internal, I_CONFIG, payload)
   end
 
 
@@ -180,8 +180,8 @@ defmodule MySensors.Gateway do
 
 
   # Construct and send a message to the gateway
-  defp _send_message(node_id, child_sensor_id, command, ack, type, payload \\ "") do
-    MySensors.Message.new(node_id, child_sensor_id, command, ack, type, payload)
+  defp _send_message(node_id, child_sensor_id, command, type, payload \\ "", ack \\ false) do
+    MySensors.Message.new(node_id, child_sensor_id, command, type, payload, ack)
     |> _send_message
   end
 
