@@ -28,7 +28,7 @@ defmodule MySensors.Types do
 
 
   # Internal types from MySensors.org
-  defp _internal do
+  def internal do
     [
       {I_BATTERY_LEVEL, 0, "Use this to report the battery level (in percent 0-100)."},
       {I_TIME, 1, "Sensors can request the current time from the Controller using this message. The time will be reported as the seconds since 1970"},
@@ -68,7 +68,7 @@ defmodule MySensors.Types do
   """
   @spec internal_type(id) :: internal
   def internal_type(value) do
-    value |> _lookup_by_value(_internal())
+    value |> _lookup_by_value(internal())
   end
 
 
@@ -77,14 +77,14 @@ defmodule MySensors.Types do
   """
   @spec internal_id(internal) :: id
   def internal_id(type) do
-    type |> _lookup_by_type(_internal())
+    type |> _lookup_by_type(internal())
   end
 
 
 
 
   # Presentation types from MySensors.org
-  defp _presentation do
+  def presentation do
     [
       {S_DOOR, 0, "Door and window sensors	V_TRIPPED, V_ARMED"},
       {S_MOTION, 1, "Motion sensors	V_TRIPPED, V_ARMED"},
@@ -135,7 +135,7 @@ defmodule MySensors.Types do
   """
   @spec presentation_type(id) :: sensor
   def presentation_type(value) do
-    value |> _lookup_by_value(_presentation())
+    value |> _lookup_by_value(presentation())
   end
 
 
@@ -144,13 +144,13 @@ defmodule MySensors.Types do
   """
   @spec presentation_id(sensor) :: id
   def presentation_id(type) do
-    type |> _lookup_by_type(_presentation())
+    type |> _lookup_by_type(presentation())
   end
 
 
 
   # Variables types from MySensors.org
-  defp _variable do
+  def variable do
     [
       {V_TEMP, 0, "Temperature	S_TEMP, S_HEATER, S_HVAC, S_WATER_QUALITY"},
       {V_HUM, 1, "Humidity	S_HUM"},
@@ -218,7 +218,7 @@ defmodule MySensors.Types do
   """
   @spec variable_type(id) :: variable
   def variable_type(value) do
-    value |> _lookup_by_value(_variable())
+    value |> _lookup_by_value(variable())
   end
 
 
@@ -227,7 +227,7 @@ defmodule MySensors.Types do
   """
   @spec variable_id(variable) :: id
   def variable_id(type) do
-    type |> _lookup_by_type(_variable())
+    type |> _lookup_by_type(variable())
   end
 
 
