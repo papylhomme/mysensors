@@ -27,7 +27,32 @@ defmodule MySensors.Types do
   @type variable :: type
 
 
-  # Internal types from MySensors.org
+  # Command type
+  def command do
+    [:presentation, :set, :req, :internal]
+  end
+
+
+  @doc """
+  Get a command type from the given ID
+  """
+  @spec command_type(id) :: command
+  def command_type(id) do
+    command() |> Enum.at(id)
+  end
+
+
+
+  @doc """
+  Get a command ID from the given type
+  """
+  @spec command_id(command) :: id
+  def command_id(type) do
+    command() |> Enum.find_index(fn t -> t == type end)
+  end
+
+
+  # Internal types
   def internal do
     [
       {I_BATTERY_LEVEL, 0, "Use this to report the battery level (in percent 0-100)."},
