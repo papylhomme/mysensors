@@ -98,6 +98,7 @@ end
 
 
 defimpl String.Chars, for: MySensors.Message do
+  alias MySensors.Message
 
   @moduledoc """
   User friendly formatting of MySensors messages
@@ -107,15 +108,9 @@ defimpl String.Chars, for: MySensors.Message do
   @doc """
   Format a message into a user readable string
   """
-  @spec to_string(MySensors.Message.t) :: String.t
+  @spec to_string(Message.t) :: String.t
   def to_string(msg) do
-    """
-    Node #{msg.node_id} / Sensor #{msg.child_sensor_id}
-    Command: #{msg.command}
-    Type: #{msg.type}
-    Payload: #{msg.payload}
-    #{if msg.ack, do: "WITH ack", else: "WITHOUT ack"}
-    """
+    "#{inspect msg}\n-> RAW: #{Message.serialize(msg)}"
   end
 
 end
