@@ -81,11 +81,20 @@ defmodule MySensors.PresentationManager do
   end
 
   # Handle accumulator finishing
-  # TODO update only if the accumulator is not empty/unused
   def handle_info({:DOWN, _, _, _, {:shutdown, acc}}, state) do
-    Logger.debug("Presentation accumulator for node #{acc.node_id} finishing #{inspect(acc)}")
-    :ok = MySensors.NodeManager.on_node_presentation(acc)
-    {:noreply, Map.delete(state, acc.node_id)}
+    case acc do
+      %{empty: true} ->
+        Logger.debug("Discarding empty accumulator for node #{acc.specs.node_id}")
+
+      %{specs: specs} ->
+        Logger.debug(
+          "Presentation accumulator for node #{specs.node_id} finishing #{inspect(specs)}"
+        )
+
+        :ok = MySensors.NodeManager.on_node_presentation(specs)
+    end
+
+    {:noreply, Map.delete(state, acc.specs.node_id)}
   end
 
   # Fallback for handle_info
@@ -131,7 +140,7 @@ defmodule MySensors.PresentationManager do
 
     # Initialize the accumulator
     def init({node_id, type, version}) do
-      state = %Node{
+      specs = %Node{
         node_id: node_id,
         type: type,
         version: version,
@@ -140,17 +149,20 @@ defmodule MySensors.PresentationManager do
         sensors: %{}
       }
 
-      {:ok, state, @timeout}
+      {:ok, %{specs: specs, empty: true}, @timeout}
     end
 
     # Handle the sketch name
     def handle_cast(%{command: :internal, type: I_SKETCH_NAME, payload: sketch_name}, state) do
-      {:noreply, %Node{state | sketch_name: sketch_name}, @timeout}
+      {:noreply, %{state | empty: false, specs: %Node{state.specs | sketch_name: sketch_name}},
+       @timeout}
     end
 
     # Handle the sketch version
     def handle_cast(%{command: :internal, type: I_SKETCH_VERSION, payload: sketch_version}, state) do
-      {:noreply, %Node{state | sketch_version: sketch_version}, @timeout}
+      {:noreply,
+       %{state | empty: false, specs: %Node{state.specs | sketch_version: sketch_version}},
+       @timeout}
     end
 
     # Handle the node presentation event
@@ -158,7 +170,9 @@ defmodule MySensors.PresentationManager do
           %{command: :presentation, child_sensor_id: 255, type: type, payload: version},
           state
         ) do
-      {:noreply, %Node{state | type: type, version: version}, @timeout}
+      {:noreply,
+       %{state | empty: false, specs: %Node{state.specs | type: type, version: version}},
+       @timeout}
     end
 
     # Skip the NodeManager CUSTOM sensor (status is handled internally by `MySensors.Node`)
@@ -176,9 +190,9 @@ defmodule MySensors.PresentationManager do
           },
           state
         ) do
-      sensors = Map.put(state.sensors, sensor_id, {sensor_id, sensor_type, sensor_desc})
+      sensors = Map.put(state.specs.sensors, sensor_id, {sensor_id, sensor_type, sensor_desc})
 
-      {:noreply, %Node{state | sensors: sensors}, @timeout}
+      {:noreply, %{state | empty: false, specs: %Node{state.specs | sensors: sensors}}, @timeout}
     end
 
     # Handle timeout to shutdown the accumulator

@@ -52,7 +52,7 @@ defmodule MySensors.Message do
   Create a new message from parameters
   """
   @spec new(Types.id(), Types.id(), Types.command(), Types.type(), String.t(), boolean) :: t
-  def new(node_id, child_sensor_id, command, type, payload, ack) do
+  def new(node_id, child_sensor_id, command, type, payload \\ nil, ack \\ nil) do
     %__MODULE__{
       node_id: node_id,
       child_sensor_id: child_sensor_id,
