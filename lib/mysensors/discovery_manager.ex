@@ -43,7 +43,7 @@ defmodule MySensors.DiscoveryManager do
   @spec discover() :: :ok
   def discover do
     Logger.info("Sending discover request")
-    MySensors.Gateway.send_message(255, 255, :internal, false, I_DISCOVER_REQUEST)
+    MySensors.Gateway.send_message(255, 255, :internal, I_DISCOVER_REQUEST)
     :ok
   end
 

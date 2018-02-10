@@ -50,7 +50,7 @@ defmodule MySensors.PresentationManager do
         false ->
           Logger.info("Requesting presentation from node #{node}...")
 
-          :ok = MySensors.Gateway.send_message(node, 255, :internal, false, I_PRESENTATION)
+          :ok = MySensors.Gateway.send_message(node, 255, :internal, I_PRESENTATION)
           state |> _init_accumulator(node)
       end
 
