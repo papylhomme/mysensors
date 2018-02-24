@@ -38,7 +38,7 @@ defmodule MySensors.Gateway do
   @spec send_message(Types.id(), Types.id(), Types.command(), Types.type(), String.t(), boolean) ::
           :ok
   def send_message(node_id, child_sensor_id, command, type, payload \\ "", ack \\ false) do
-    MySensors.Message.new(node_id, child_sensor_id, command, type, payload, ack)
+    Message.new(node_id, child_sensor_id, command, type, payload, ack)
     |> send_message
   end
 
@@ -78,7 +78,7 @@ defmodule MySensors.Gateway do
         payload \\ "",
         timeout \\ @ack_timeout
       ) do
-    MySensors.Message.new(node_id, child_sensor_id, command, type, payload, true)
+    Message.new(node_id, child_sensor_id, command, type, payload, true)
     |> sync_message(timeout)
   end
 
@@ -255,15 +255,13 @@ defmodule MySensors.Gateway do
 
   # Construct and send a message to the gateway
   defp _send_message(node_id, child_sensor_id, command, type, payload \\ "", ack \\ false) do
-    MySensors.Message.new(node_id, child_sensor_id, command, type, payload, ack)
+    Message.new(node_id, child_sensor_id, command, type, payload, ack)
     |> _send_message
   end
 
   # Send a message to the gateway
   defp _send_message(msg) do
-    str = MySensors.Message.serialize(msg)
-
     Logger.debug(fn -> "Sending message #{msg}" end)
-    Phoenix.PubSub.broadcast(MySensors.PubSub, "outgoing", {:mysensors_outgoing, str})
+    Phoenix.PubSub.broadcast(MySensors.PubSub, "outgoing", {:mysensors_outgoing, msg})
   end
 end

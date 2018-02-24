@@ -1,4 +1,6 @@
 defmodule MySensors.SerialBridge do
+  alias MySensors.Message
+
   @moduledoc """
   A server handling communication with a [MySensors Serial Gateway](https://www.mysensors.org/build/serial_gateway)
 
@@ -78,7 +80,7 @@ defmodule MySensors.SerialBridge do
         Phoenix.PubSub.broadcast(
           MySensors.PubSub,
           "incoming",
-          {:mysensors_incoming, MySensors.Message.parse(str)}
+          {:mysensors_incoming, Message.parse(str)}
         )
 
       # unknown message
@@ -91,7 +93,7 @@ defmodule MySensors.SerialBridge do
 
   # Handle outgoing messages
   def handle_info({:mysensors_outgoing, message}, state) do
-    Nerves.UART.write(Nerves.UART, "#{message}\n")
+    Nerves.UART.write(Nerves.UART, "#{Message.serialize(message)}\n")
     {:noreply, state}
   end
 
