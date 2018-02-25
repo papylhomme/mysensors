@@ -51,7 +51,7 @@ defmodule MySensors.NodeManager do
       :continue
     end)
 
-    Phoenix.PubSub.subscribe(MySensors.PubSub, "incoming")
+    MySensors.TransportBus.subscribe_incoming()
 
     {:ok, state}
   end

@@ -1,4 +1,6 @@
 defmodule MySensors.Gateway do
+  alias MySensors.Bus
+  alias MySensors.TransportBus
   alias MySensors.Types
   alias MySensors.Message
 
@@ -111,7 +113,7 @@ defmodule MySensors.Gateway do
 
   # Init
   def init(nil) do
-    Phoenix.PubSub.subscribe(MySensors.PubSub, "incoming")
+    TransportBus.subscribe_incoming()
     {:ok, %{version_handlers: [], ack_handlers: []}}
   end
 
@@ -191,7 +193,7 @@ defmodule MySensors.Gateway do
 
   # Log from the gateway
   defp _process_message(msg = %{command: :internal, type: I_LOG_MESSAGE}) do
-    Phoenix.PubSub.broadcast(MySensors.PubSub, "gwlog", {:mysensors_gwlog, msg.payload})
+    Bus.broadcast("gwlog", {:mysensors_gwlog, msg.payload})
   end
 
   # Forward discover responses to the discovery manager
@@ -236,7 +238,7 @@ defmodule MySensors.Gateway do
 
   # Forward other message to their related node
   defp _process_message(msg = %{node_id: node_id}) do
-    Phoenix.PubSub.broadcast(MySensors.PubSub, "node_#{node_id}", {:mysensors_message, msg})
+    Bus.broadcast("node_#{node_id}", {:mysensors_message, msg})
   end
 
   # Process an error message
@@ -262,6 +264,6 @@ defmodule MySensors.Gateway do
   # Send a message to the gateway
   defp _send_message(msg) do
     Logger.debug(fn -> "Sending message #{msg}" end)
-    Phoenix.PubSub.broadcast(MySensors.PubSub, "outgoing", {:mysensors_outgoing, msg})
+    TransportBus.broadcast_outgoing(msg)
   end
 end

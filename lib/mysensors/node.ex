@@ -1,5 +1,6 @@
 defmodule MySensors.Node do
   alias MySensors.Types
+  alias MySensors.Bus
   alias MySensors.Sensor
   alias __MODULE__.NodeUpdatedEvent
 
@@ -96,7 +97,7 @@ defmodule MySensors.Node do
 
   # Initialize the server
   def init({table, node_id}) do
-    Phoenix.PubSub.subscribe(MySensors.PubSub, "node_#{node_id}")
+    Bus.subscribe("node_#{node_id}")
 
     [{_id, node_specs}] = :dets.lookup(table, node_id)
 
@@ -267,7 +268,7 @@ defmodule MySensors.Node do
 
     def broadcast(specs) do
       event = new(specs)
-      Phoenix.PubSub.broadcast(MySensors.PubSub, "nodes_events", {:mysensors, :node_event, event})
+      Bus.broadcast("nodes_events", {:mysensors, :node_event, event})
     end
   end
 
@@ -292,7 +293,7 @@ defmodule MySensors.Node do
 
     def broadcast(specs) do
       event = new(specs)
-      Phoenix.PubSub.broadcast(MySensors.PubSub, "nodes_events", {:mysensors, :node_event, event})
+      Bus.broadcast("nodes_events", {:mysensors, :node_event, event})
     end
   end
 end

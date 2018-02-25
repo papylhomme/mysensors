@@ -1,5 +1,6 @@
 defmodule MySensors.Sensor do
   alias MySensors.Types
+  alias MySensors.Bus
   alias __MODULE__.ValueUpdatedEvent
 
   @moduledoc """
@@ -186,8 +187,7 @@ defmodule MySensors.Sensor do
     def broadcast(mysensors_event, old_value, new_value) do
       event = new(mysensors_event, old_value, new_value)
 
-      Phoenix.PubSub.broadcast(
-        MySensors.PubSub,
+      Bus.broadcast(
         "sensors_events",
         {:mysensors, :sensor_event, event}
       )

@@ -12,7 +12,8 @@ defmodule MySensors do
     import Supervisor.Spec, warn: false
 
     children = [
-      supervisor(Phoenix.PubSub.PG2, [MySensors.PubSub, []]),
+      MySensors.Bus,
+      MySensors.TransportBus,
       MySensors.NodeManager,
       MySensors.PresentationManager,
       MySensors.DiscoveryManager

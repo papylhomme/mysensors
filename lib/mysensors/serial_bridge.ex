@@ -1,4 +1,5 @@
 defmodule MySensors.SerialBridge do
+  alias MySensors.TransportBus
   alias MySensors.Message
 
   @moduledoc """
@@ -45,8 +46,7 @@ defmodule MySensors.SerialBridge do
     if is_nil(serial_dev), do: raise("Missing configuration key :uart")
 
     Logger.info("Starting serial bridge on #{serial_dev}")
-
-    Phoenix.PubSub.subscribe(MySensors.PubSub, "outgoing")
+    TransportBus.subscribe_outgoing()
 
     case _try_connect(serial_dev) do
       :ok -> {:ok, %{serial_dev: serial_dev, status: :connected}}
@@ -77,11 +77,9 @@ defmodule MySensors.SerialBridge do
 
       # message received
       {:nerves_uart, ^serial_dev, str} ->
-        Phoenix.PubSub.broadcast(
-          MySensors.PubSub,
-          "incoming",
-          {:mysensors_incoming, Message.parse(str)}
-        )
+        str
+        |> Message.parse()
+        |> TransportBus.broadcast_incoming()
 
       # unknown message
       _ ->
