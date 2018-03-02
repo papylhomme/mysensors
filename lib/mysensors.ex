@@ -14,9 +14,7 @@ defmodule MySensors do
     children = [
       MySensors.Bus,
       MySensors.TransportBus,
-      MySensors.NodeManager,
-      MySensors.PresentationManager,
-      MySensors.DiscoveryManager
+      MySensors.Network,
     ]
 
     children =
