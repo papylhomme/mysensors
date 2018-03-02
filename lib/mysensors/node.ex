@@ -180,38 +180,36 @@ defmodule MySensors.Node do
     end
   end
 
-  # Handle battery level
-  def handle_info(
-        {:mysensors_message,
-         %{command: :internal, type: I_BATTERY_LEVEL, child_sensor_id: 255, payload: payload}},
-        state = %{node: node}
-      ) do
-    Logger.debug("Node #{node.node_id} handling battery level: #{payload}")
+  # Handle internal commands
+  def handle_info({_, msg = %{command: :internal, child_sensor_id: 255, type: type}}, state = %{node: node}) do
+    new_node =
+      case type do
+        # handle battery level
+        I_BATTERY_LEVEL ->
+          Logger.debug("Node #{node.node_id} handling battery level: #{msg.payload}")
+          node = %{node | battery: msg.payload}
+          NodeUpdatedEvent.broadcast(node)
+          node
 
-    node = %{node | battery: payload}
-    NodeUpdatedEvent.broadcast(node)
+        # handle heartbeat response
+        I_HEARTBEAT_RESPONSE ->
+          Logger.debug("Node #{node.node_id} handling heartbeat")
+          node = %{node | last_seen: DateTime.utc_now()}
+          NodeUpdatedEvent.broadcast(node)
+          node
 
-    {:noreply, %{state | node: node}}
-  end
+        # discard other commands
+        _ -> node
+      end
 
-  # Handle heartbeat
-  def handle_info(
-        {:mysensors_message,
-         %{command: :internal, type: I_HEARTBEAT_RESPONSE, child_sensor_id: 255}},
-        state = %{node: node}
-      ) do
-    Logger.debug("Node #{node.node_id} handling heartbeat")
-
-    node = %{node | last_seen: DateTime.utc_now()}
-    NodeUpdatedEvent.broadcast(node)
-
-    {:noreply, %{state | node: node}}
+    {:noreply, %{state | node: new_node}}
   end
 
   # Handle running status provided by NodeManager's service messages
   # When node awakes, flush the queued messages
+  # TODO replace by new internal commands POST and PRE SLEEP (mysensors 2.2)
   def handle_info(
-        {:mysensors_message,
+        {_,
          %{command: :set, type: V_CUSTOM, child_sensor_id: 200, payload: payload}},
         state = %{node: node}
       ) do
@@ -227,15 +225,15 @@ defmodule MySensors.Node do
     {:noreply, %{state | node: node, message_queue: []}}
   end
 
-  # Handle incoming messages
+  # Handle incoming sensor messages
   def handle_info(
-        {:mysensors_message, message = %{child_sensor_id: sensor_id}},
+        {_, message = %{child_sensor_id: sensor_id}},
         state = %{node: node}
       ) do
     if Map.has_key?(node.sensors, sensor_id) do
       Sensor.on_event(node.sensors[sensor_id], message)
     else
-      Logger.warn("Node #{node.node_id} handling unexpected event #{message}")
+      Logger.warn("Node #{node.node_id} doesn't know sensor #{sensor_id} from message #{message}")
     end
 
     {:noreply, state}

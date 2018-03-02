@@ -20,7 +20,7 @@ defmodule MySensors.Bus do
   """
   @spec broadcast(binary, term) :: :ok | {:error, term}
   def broadcast(topic, message) do
-    PubSub.broadcast(@bridge_name, topic, message)
+    PubSub.broadcast(@bridge_name, topic, {topic, message})
   end
 
   @doc """

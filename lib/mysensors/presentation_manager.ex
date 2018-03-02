@@ -26,20 +26,16 @@ defmodule MySensors.PresentationManager do
     :ok = GenServer.cast(__MODULE__, {:request_presentation, node})
   end
 
-  @doc """
-  Process a presentation event
-  """
-  @spec on_presentation_event(MySensors.Message.presentation()) :: :ok
-  def on_presentation_event(msg) do
-    GenServer.cast(__MODULE__, msg)
-  end
 
   # Initialize the manager
   def init(:ok) do
+    MySensors.Bus.subscribe("presentation")
+    MySensors.Bus.subscribe("internal")
+
     {:ok, %{}}
   end
 
-  # Handle version call
+  # Handle request presentation call
   def handle_cast({:request_presentation, node}, state) do
     new_state =
       case Map.has_key?(state, node) do
@@ -57,44 +53,36 @@ defmodule MySensors.PresentationManager do
     {:noreply, new_state}
   end
 
-  # Handle receiving presentation without asking first
-  def handle_cast(msg = %{node_id: node, child_sensor_id: 255, command: :presentation}, state) do
-    new_state =
-      case Map.has_key?(state, node) do
-        true -> state
-        false -> state |> _init_accumulator(node)
-      end
-
-    Map.get(new_state, node) |> Accumulator.on_presentation_event(msg)
-
-    {:noreply, new_state}
+  # Forward presentation messages
+  def handle_info({"presentation", msg = %{command: :presentation}}, state) do
+    {:noreply, _forward_presentation(state, msg)}
   end
 
-  # Handle presentation event
-  def handle_cast(msg = %{node_id: node}, state) do
-    case Map.has_key?(state, node) do
-      false -> Logger.error("No presentation running for node #{node} #{inspect(state)}")
-      true -> Map.get(state, node) |> Accumulator.on_presentation_event(msg)
-    end
+  # Forward sketch info messages
+  def handle_info({"internal", msg = %{child_sensor_id: 255, command: :internal, type: t}}, state) when t in [I_SKETCH_NAME, I_SKETCH_VERSION] do
+    {:noreply, _forward_presentation(state, msg)}
+  end
 
+  # Discard remaining internal messages
+  def handle_info({"internal", _msg = %{command: :internal}}, state) do
     {:noreply, state}
   end
 
   # Handle accumulator finishing
   def handle_info({:DOWN, _, _, _, {:shutdown, acc}}, state) do
-    case acc do
-      %{empty: true} ->
-        Logger.debug("Discarding empty accumulator for node #{acc.specs.node_id}")
+    case _accumulator_ready?(acc) do
+      false ->
+        Logger.debug("Discarding empty accumulator for node #{acc.node_id} #{inspect acc}")
 
-      %{specs: specs} ->
+      true ->
         Logger.debug(
-          "Presentation accumulator for node #{specs.node_id} finishing #{inspect(specs)}"
+          "Presentation accumulator for node #{acc.node_id} finishing #{inspect acc}"
         )
 
-        :ok = MySensors.NodeManager.on_node_presentation(specs)
+        :ok = MySensors.NodeManager.on_node_presentation(acc)
     end
 
-    {:noreply, Map.delete(state, acc.specs.node_id)}
+    {:noreply, Map.delete(state, acc.node_id)}
   end
 
   # Fallback for handle_info
@@ -110,6 +98,24 @@ defmodule MySensors.PresentationManager do
 
     put_in(state, [node], pid)
   end
+
+  # Forward a presentation event to its related accumulator, creating a new one if needed
+  defp _forward_presentation(state, msg = %{node_id: node}) do
+    new_state =
+      case Map.has_key?(state, node) do
+        true -> state
+        false -> state |> _init_accumulator(node)
+      end
+
+    Map.get(new_state, node) |> Accumulator.on_presentation_event(msg)
+    new_state
+  end
+
+  # Test if an accumulator has received sufficient information
+  defp _accumulator_ready?(acc) do
+    not(is_nil(acc.node_id) or is_nil(acc.type) or(map_size(acc.sensors) == 0))
+  end
+
 
   defmodule Accumulator do
     alias MySensors.Node
@@ -149,19 +155,19 @@ defmodule MySensors.PresentationManager do
         sensors: %{}
       }
 
-      {:ok, %{specs: specs, empty: true}, @timeout}
+      {:ok, specs, @timeout}
     end
 
     # Handle the sketch name
     def handle_cast(%{command: :internal, type: I_SKETCH_NAME, payload: sketch_name}, state) do
-      {:noreply, %{state | empty: false, specs: %Node{state.specs | sketch_name: sketch_name}},
+      {:noreply, %{state | sketch_name: sketch_name},
        @timeout}
     end
 
     # Handle the sketch version
     def handle_cast(%{command: :internal, type: I_SKETCH_VERSION, payload: sketch_version}, state) do
       {:noreply,
-       %{state | empty: false, specs: %Node{state.specs | sketch_version: sketch_version}},
+       %{state | sketch_version: sketch_version},
        @timeout}
     end
 
@@ -171,7 +177,7 @@ defmodule MySensors.PresentationManager do
           state
         ) do
       {:noreply,
-       %{state | empty: false, specs: %Node{state.specs | type: type, version: version}},
+       %{state | type: type, version: version},
        @timeout}
     end
 
@@ -190,9 +196,9 @@ defmodule MySensors.PresentationManager do
           },
           state
         ) do
-      sensors = Map.put(state.specs.sensors, sensor_id, {sensor_id, sensor_type, sensor_desc})
+      sensors = Map.put(state.sensors, sensor_id, {sensor_id, sensor_type, sensor_desc})
 
-      {:noreply, %{state | empty: false, specs: %Node{state.specs | sensors: sensors}}, @timeout}
+      {:noreply, %{state | sensors: sensors}, @timeout}
     end
 
     # Handle timeout to shutdown the accumulator

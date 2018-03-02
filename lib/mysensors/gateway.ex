@@ -29,9 +29,10 @@ defmodule MySensors.Gateway do
   @doc """
   Send a message to the MySensors network
   """
-  @spec send_message(Message.t()) :: :ok
+  @spec send_message(Message.t()) :: :ok | {:error, term}
   def send_message(message) do
-    GenServer.cast(__MODULE__, {:send_message, message})
+    Logger.debug(fn -> "Sending message #{message}" end)
+    TransportBus.broadcast_outgoing(message)
   end
 
   @doc """
@@ -51,10 +52,13 @@ defmodule MySensors.Gateway do
   def sync_message(message, timeout \\ @ack_timeout) do
     task =
       Task.async(fn ->
-        :ok = GenServer.call(__MODULE__, {:sync_message, message})
+        Bus.subscribe("message_acks")
+
+        message = %{message | ack: true}
+        :ok = send_message(message)
 
         receive do
-          v -> v
+          {"message_acks", ^message} -> message
         end
       end)
 
@@ -91,10 +95,11 @@ defmodule MySensors.Gateway do
   def version do
     task =
       Task.async(fn ->
-        :ok = GenServer.call(__MODULE__, {:version})
+        Bus.subscribe("internal")
+        :ok = send_message(0, 255, :internal, I_VERSION)
 
         receive do
-          v -> v
+          {"internal", %{child_sensor_id: 255, command: :internal, node_id: 0, type: I_VERSION, payload: version}} -> version
         end
       end)
 
@@ -113,60 +118,83 @@ defmodule MySensors.Gateway do
 
   # Init
   def init(nil) do
+    Bus.subscribe("internal")
     TransportBus.subscribe_incoming()
-    {:ok, %{version_handlers: [], ack_handlers: []}}
-  end
 
-  # Handle version call
-  def handle_call({:version}, _from = {pid, _ref}, state) do
-    {:reply, _send_message(0, 255, :internal, I_VERSION),
-     %{state | version_handlers: state.version_handlers ++ [pid]}}
-  end
-
-  # Handle sync_message call
-  def handle_call({:sync_message, message}, _from = {pid, _ref}, state) do
-    _send_message(%{message | ack: true})
-    {:reply, :ok, %{state | ack_handlers: state.ack_handlers ++ [{message, pid}]}}
-  end
-
-  # Handle send_message cast
-  def handle_cast({:send_message, message}, state) do
-    _send_message(%{message | ack: false})
-    {:noreply, state}
+    {:ok, %{}}
   end
 
   # Handle incoming acks
   def handle_info({:mysensors_incoming, message = %{ack: true}}, state) do
-    Logger.debug("Handling ack: #{message}")
-
-    case Enum.find_index(state.ack_handlers, fn {original, _handler} -> message == original end) do
-      nil ->
-        {:noreply, state}
-
-      i ->
-        {{_original, handler}, handlers} = List.pop_at(state.ack_handlers, i)
-        if Process.alive?(handler), do: send(handler, message)
-        {:noreply, %{state | ack_handlers: handlers}}
-    end
+    #Logger.debug "Forwarding ack: #{message}"
+    Bus.broadcast("message_acks", message)
+    {:noreply, state}
   end
 
-  # Handle version response
-  def handle_info({:mysensors_incoming, message = %{command: :internal, type: I_VERSION}}, state) do
-    Logger.debug("Handling version response: #{message}")
-
-    case state.version_handlers do
-      [] ->
-        {:noreply, state}
-
-      [handler | handlers] ->
-        send(handler, message.payload)
-        {:noreply, %{state | version_handlers: handlers}}
-    end
+  # Forward incoming internal messages
+  def handle_info({:mysensors_incoming, message = %{command: :internal}}, state) do
+    #Logger.debug "Forwarding internal command: #{message}"
+    Bus.broadcast("internal", message)
+    {:noreply, state}
   end
 
-  # Handle incoming messages
-  def handle_info({:mysensors_incoming, message}, state) do
-    _process_message(message)
+  # Forward incoming presentation messages
+  def handle_info({:mysensors_incoming, message = %{command: :presentation}}, state) do
+    #Logger.debug "Forwarding presentation: #{message}"
+    Bus.broadcast("presentation", message)
+    {:noreply, state}
+  end
+
+  # Forward requests to nodes
+  def handle_info({:mysensors_incoming, message = %{node_id: node_id, command: c}}, state) when c in [:req, :set] do
+    #Logger.debug "Forwarding node event: #{message}"
+    Bus.broadcast("node_#{node_id}", message)
+    {:noreply, state}
+  end
+
+
+  # Forward log messages
+  def handle_info({"internal", %{command: :internal, type: I_LOG_MESSAGE, payload: log}}, state) do
+    Logger.debug("Received log message: #{log}")
+    Bus.broadcast("gwlog", log)
+    {:noreply, state}
+  end
+
+
+  # Handle time requests
+  def handle_info({"internal", msg = %{command: :internal, type: I_TIME}}, state) do
+    Logger.debug("Received time request: #{msg}")
+
+    send_message(
+      msg.node_id,
+      msg.child_sensor_id,
+      :internal,
+      I_TIME,
+      DateTime.utc_now() |> DateTime.to_unix(:seconds)
+    )
+
+    {:noreply, state}
+  end
+
+  # Handle config requests
+  def handle_info({"internal", msg = %{command: :internal, type: I_CONFIG}}, state) do
+    Logger.debug("Received configuration request: #{msg}")
+
+    payload =
+      case Application.get_env(:mysensors, :measure) do
+        :metric -> "M"
+        :imperial -> "I"
+        _ -> ""
+      end
+
+    send_message(msg.node_id, msg.child_sensor_id, :internal, I_CONFIG, payload)
+    {:noreply, state}
+  end
+
+
+  # Forward remaining internal commands to related node
+  def handle_info({"internal", msg = %{command: :internal, node_id: node_id}}, state) do
+    Bus.broadcast("node_#{node_id}", msg)
     {:noreply, state}
   end
 
@@ -176,94 +204,4 @@ defmodule MySensors.Gateway do
     {:noreply, state}
   end
 
-  #################
-  #   Internals   #
-  #################
-
-  # Process a presentation message
-  defp _process_message(msg = %{command: :presentation}) do
-    Logger.debug("Presentation event #{msg}")
-    MySensors.PresentationManager.on_presentation_event(msg)
-  end
-
-  # Handle gateway ready
-  defp _process_message(%{command: :internal, type: I_GATEWAY_READY}) do
-    Logger.info("Gateway ready !")
-  end
-
-  # Log from the gateway
-  defp _process_message(msg = %{command: :internal, type: I_LOG_MESSAGE}) do
-    Bus.broadcast("gwlog", {:mysensors_gwlog, msg.payload})
-  end
-
-  # Forward discover responses to the discovery manager
-  defp _process_message(msg = %{command: :internal, type: I_DISCOVER_RESPONSE}) do
-    Logger.debug("Discover response #{msg}")
-    MySensors.DiscoveryManager.notify(msg)
-  end
-
-  # Process time requests
-  defp _process_message(msg = %{command: :internal, type: I_TIME}) do
-    Logger.debug("Requesting controller time #{msg}")
-
-    _send_message(
-      msg.node_id,
-      msg.child_sensor_id,
-      :internal,
-      I_TIME,
-      DateTime.utc_now() |> DateTime.to_unix(:seconds)
-    )
-  end
-
-  # Process config requests
-  defp _process_message(msg = %{command: :internal, type: I_CONFIG}) do
-    Logger.debug("Requesting controller configuration #{msg}")
-
-    payload =
-      case Application.get_env(:mysensors, :measure) do
-        :metric -> "M"
-        :imperial -> "I"
-        _ -> ""
-      end
-
-    _send_message(msg.node_id, msg.child_sensor_id, :internal, I_CONFIG, payload)
-  end
-
-  # Forward sketch information to the presentation manager
-  defp _process_message(msg = %{command: :internal, type: t})
-       when t in [I_SKETCH_NAME, I_SKETCH_VERSION] do
-    Logger.debug("Sketch information event #{msg}")
-    MySensors.PresentationManager.on_presentation_event(msg)
-  end
-
-  # Forward other message to their related node
-  defp _process_message(msg = %{node_id: node_id}) do
-    Bus.broadcast("node_#{node_id}", {:mysensors_message, msg})
-  end
-
-  # Process an error message
-  defp _process_message({:error, input, e, stacktrace}) do
-    Logger.error(
-      "Error processing input '#{input}': #{inspect(e)}\n#{
-        stacktrace |> Exception.format_stacktrace()
-      }"
-    )
-  end
-
-  # Process unexpected messages
-  defp _process_message(msg) do
-    Logger.debug("Unexpected message: #{inspect(msg)}")
-  end
-
-  # Construct and send a message to the gateway
-  defp _send_message(node_id, child_sensor_id, command, type, payload \\ "", ack \\ false) do
-    Message.new(node_id, child_sensor_id, command, type, payload, ack)
-    |> _send_message
-  end
-
-  # Send a message to the gateway
-  defp _send_message(msg) do
-    Logger.debug(fn -> "Sending message #{msg}" end)
-    TransportBus.broadcast_outgoing(msg)
-  end
 end
