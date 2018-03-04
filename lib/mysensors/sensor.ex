@@ -185,12 +185,8 @@ defmodule MySensors.Sensor do
     end
 
     def broadcast(mysensors_event, old_value, new_value) do
-      event = new(mysensors_event, old_value, new_value)
-
-      Bus.broadcast(
-        "sensors_events",
-        {:mysensors, :sensor_event, event}
-      )
+      new(mysensors_event, old_value, new_value)
+      |> Bus.broadcast_sensor_event()
     end
   end
 end

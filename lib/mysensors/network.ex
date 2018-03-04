@@ -1,5 +1,6 @@
 defmodule MySensors.Network do
   alias MySensors.Node
+  alias MySensors.MessageQueue
   alias __MODULE__.PresentationAccumulator
 
   @moduledoc """
@@ -11,8 +12,7 @@ defmodule MySensors.Network do
   use GenServer, start: {__MODULE__, :start_link, []}
   require Logger
 
-  #TODO automatically request presentation from unknown nodes
-
+  # TODO automatically request presentation from unknown nodes
 
   #########
   #  API
@@ -42,7 +42,6 @@ defmodule MySensors.Network do
     GenServer.cast(__MODULE__, :scan)
   end
 
-
   @doc """
   Request presentation from a node
   """
@@ -50,9 +49,6 @@ defmodule MySensors.Network do
   def request_presentation(node) do
     :ok = GenServer.cast(__MODULE__, {:request_presentation, node})
   end
-
-
-
 
   ####################
   #  Implementation
@@ -63,18 +59,19 @@ defmodule MySensors.Network do
     nodes_db = Path.join(Application.get_env(:mysensors, :data_dir, "./"), "nodes.db")
     {:ok, tid} = :dets.open_file(nodes_db, ram_file: true, auto_save: 10)
 
+    {:ok, queue} = MessageQueue.start_link()
     {:ok, _} = Supervisor.start_link([], strategy: :one_for_one, name: @supervisor)
 
     Logger.info("Initializing nodes from storage...")
+
     :dets.traverse(tid, fn {id, _node_specs} ->
       _start_child(tid, id)
       :continue
     end)
 
-    MySensors.Bus.subscribe("presentation")
-    MySensors.Bus.subscribe("internal")
+    MySensors.TransportBus.subscribe_incoming()
 
-    {:ok, %{table: tid, presentations: %{}}}
+    {:ok, %{table: tid, presentations: %{}, queue: queue}}
   end
 
   # Handle list_nodes call
@@ -89,7 +86,7 @@ defmodule MySensors.Network do
     {:reply, res, state}
   end
 
-  # Handle discover response cast
+  # Handle scan cast
   def handle_cast(:scan, state) do
     Logger.info("Sending discover request")
     MySensors.Gateway.send_message(255, 255, :internal, I_DISCOVER_REQUEST)
@@ -110,8 +107,7 @@ defmodule MySensors.Network do
 
         false ->
           Logger.info("Requesting presentation from node #{node}...")
-
-          :ok = MySensors.Gateway.send_message(node, 255, :internal, I_PRESENTATION)
+          MessageQueue.push(state.queue, node, 255, :internal, I_PRESENTATION)
           state.presentations |> _init_accumulator(node)
       end
 
@@ -119,7 +115,11 @@ defmodule MySensors.Network do
   end
 
   # Handle presentation initiated by node
-  def handle_info({"presentation", msg = %{command: :presentation, child_sensor_id: 255, node_id: node_id}}, state) do
+  def handle_info(
+        {:mysensors_incoming,
+         msg = %{command: :presentation, child_sensor_id: 255, node_id: node_id}},
+        state
+      ) do
     acc = get_in(state, [:presentations, node_id])
 
     presentations =
@@ -127,45 +127,66 @@ defmodule MySensors.Network do
         nil ->
           Logger.info("Receiving presentation from node #{node_id}...")
           p = _init_accumulator(state.presentations, node_id)
-          send p[node_id], msg
+          send(p[node_id], msg)
           p
 
         pid ->
-          send pid, msg
+          send(pid, msg)
           state.presentations
       end
 
     {:noreply, %{state | presentations: presentations}}
   end
 
-  # Forward presentation messages
-  def handle_info({"presentation", msg = %{command: :presentation, node_id: node_id}}, state) do
+  # Forward presentation messages to accumulator
+  def handle_info({:mysensors_incoming, msg = %{command: :presentation, node_id: node_id}}, state) do
     acc = get_in(state, [:presentations, node_id])
-    unless is_nil(acc), do: send acc, msg
+    unless is_nil(acc), do: send(acc, msg)
     {:noreply, state}
   end
 
-  # Forward sketch info messages
-  def handle_info({"internal", msg = %{node_id: node_id, child_sensor_id: 255, command: :internal, type: t}}, state) when t in [I_SKETCH_NAME, I_SKETCH_VERSION] do
+  # Forward sketch info messages to accumulator
+  def handle_info(
+        {:mysensors_incoming,
+         msg = %{node_id: node_id, child_sensor_id: 255, command: :internal, type: t}},
+        state
+      )
+      when t in [I_SKETCH_NAME, I_SKETCH_VERSION] do
     acc = get_in(state, [:presentations, node_id])
-    unless is_nil(acc), do: send acc, msg
+    unless is_nil(acc), do: send(acc, msg)
     {:noreply, state}
   end
 
-  # Discard remaining internal messages
-  def handle_info({"internal", _msg = %{command: :internal}}, state) do
+  # Handle node awakening to flush related presentation requests
+  # TODO replace by new internal commands POST and PRE SLEEP (mysensors 2.2)
+  def handle_info(
+        {:mysensors_incoming,
+         _msg = %{
+           command: :set,
+           child_sensor_id: 200,
+           type: V_CUSTOM,
+           payload: "AWAKE",
+           node_id: node_id
+         }},
+        state
+      ) do
+    MessageQueue.flush(state.queue, fn msg -> msg.node_id == node_id end)
     {:noreply, state}
   end
 
+  # Discard remaining MySensors messages
+  def handle_info({:mysensors_incoming, _msg}, state) do
+    {:noreply, state}
+  end
 
   # Handle accumulator finishing
   def handle_info({:DOWN, _, _, _, {:shutdown, acc}}, state) do
     case _accumulator_ready?(acc) do
       false ->
-        Logger.debug("Discarding empty accumulator for node #{acc.node_id} #{inspect acc}")
+        Logger.debug("Discarding empty accumulator for node #{acc.node_id} #{inspect(acc)}")
 
       true ->
-        Logger.debug("Presentation accumulator for node #{acc.node_id} finishing #{inspect acc}")
+        Logger.debug("Presentation accumulator for node #{acc.node_id} finishing #{inspect(acc)}")
         _node_presentation(state.table, acc)
     end
 
@@ -192,7 +213,7 @@ defmodule MySensors.Network do
 
   # Test if an accumulator has received sufficient information
   defp _accumulator_ready?(acc) do
-    not(is_nil(acc.node_id) or is_nil(acc.type) or(map_size(acc.sensors) == 0))
+    not (is_nil(acc.node_id) or is_nil(acc.type) or map_size(acc.sensors) == 0)
   end
 
   # Handle presentation from a node
@@ -212,13 +233,9 @@ defmodule MySensors.Network do
     end
   end
 
-
+  # An accumulator for presentation events
   defmodule PresentationAccumulator do
-
-    @moduledoc """
-    An accumulator for presentation events
-    """
-
+    @moduledoc false
     use GenServer
 
     @timeout 1000
@@ -261,9 +278,18 @@ defmodule MySensors.Network do
     def handle_info(msg = %{command: :presentation}, state) do
       new_state =
         case msg.child_sensor_id do
-          255 -> %{state | type: msg.type, version: msg.payload}
-          200 -> state #Skip the NodeManager CUSTOM sensor (status is handled internally by `MySensors.Node`)
-          sensor_id -> %{state | sensors: Map.put(state.sensors, sensor_id, {sensor_id, msg.type, msg.payload})}
+          255 ->
+            %{state | type: msg.type, version: msg.payload}
+
+          # Skip the NodeManager CUSTOM sensor (status is handled internally by `MySensors.Node`)
+          200 ->
+            state
+
+          sensor_id ->
+            %{
+              state
+              | sensors: Map.put(state.sensors, sensor_id, {sensor_id, msg.type, msg.payload})
+            }
         end
 
       {:noreply, new_state, @timeout}
@@ -274,5 +300,4 @@ defmodule MySensors.Network do
       {:stop, {:shutdown, state}, state}
     end
   end
-
 end

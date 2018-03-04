@@ -2,11 +2,14 @@ defmodule MySensors.Node do
   alias MySensors.Types
   alias MySensors.Bus
   alias MySensors.Sensor
+  alias MySensors.MessageQueue
   alias __MODULE__.NodeUpdatedEvent
 
   @moduledoc """
   A server to interract with a MySensors node
   """
+
+  # TODO provide access to the message queue
 
   defstruct node_id: nil,
             type: nil,
@@ -97,7 +100,8 @@ defmodule MySensors.Node do
 
   # Initialize the server
   def init({table, node_id}) do
-    Bus.subscribe("node_#{node_id}")
+    Bus.subscribe_node(node_id)
+    {:ok, queue} = MessageQueue.start_link()
 
     [{_id, node_specs}] = :dets.lookup(table, node_id)
 
@@ -111,7 +115,7 @@ defmodule MySensors.Node do
 
     {:ok,
      %{
-       message_queue: [],
+       message_queue: queue,
        node: %__MODULE__{
          node_id: node_specs.node_id,
          type: node_specs.type,
@@ -165,23 +169,16 @@ defmodule MySensors.Node do
   end
 
   # Handle send message
-  def handle_cast({:send_message, message}, state = %{node: node, message_queue: message_queue}) do
-    case node do
-      # when node is sleeping, queue the message
-      %{status: "SLEEPING"} ->
-        Logger.debug("Node #{node.node_id} queuing message #{message}")
-        {:noreply, %{state | message_queue: message_queue ++ [message]}}
-
-      _ ->
-        message
-        |> MySensors.Gateway.send_message()
-
-        {:noreply, state}
-    end
+  def handle_cast({:send_message, message}, state = %{message_queue: queue}) do
+    MessageQueue.push(queue, message)
+    {:noreply, state}
   end
 
   # Handle internal commands
-  def handle_info({_, msg = %{command: :internal, child_sensor_id: 255, type: type}}, state = %{node: node}) do
+  def handle_info(
+        {:mysensors, :message, msg = %{command: :internal, child_sensor_id: 255, type: type}},
+        state = %{node: node}
+      ) do
     new_node =
       case type do
         # handle battery level
@@ -199,7 +196,8 @@ defmodule MySensors.Node do
           node
 
         # discard other commands
-        _ -> node
+        _ ->
+          node
       end
 
     {:noreply, %{state | node: new_node}}
@@ -209,7 +207,7 @@ defmodule MySensors.Node do
   # When node awakes, flush the queued messages
   # TODO replace by new internal commands POST and PRE SLEEP (mysensors 2.2)
   def handle_info(
-        {_,
+        {:mysensors, :message,
          %{command: :set, type: V_CUSTOM, child_sensor_id: 200, payload: payload}},
         state = %{node: node}
       ) do
@@ -220,14 +218,14 @@ defmodule MySensors.Node do
     NodeUpdatedEvent.broadcast(node)
 
     # flush queued message
-    Enum.each(state.message_queue, fn message -> message |> MySensors.Gateway.send_message() end)
+    MessageQueue.flush(state.message_queue)
 
-    {:noreply, %{state | node: node, message_queue: []}}
+    {:noreply, %{state | node: node}}
   end
 
   # Handle incoming sensor messages
   def handle_info(
-        {_, message = %{child_sensor_id: sensor_id}},
+        {:mysensors, :message, message = %{child_sensor_id: sensor_id}},
         state = %{node: node}
       ) do
     if Map.has_key?(node.sensors, sensor_id) do
@@ -265,8 +263,8 @@ defmodule MySensors.Node do
     end
 
     def broadcast(specs) do
-      event = new(specs)
-      Bus.broadcast("nodes_events", {:mysensors, :node_event, event})
+      new(specs)
+      |> Bus.broadcast_node_event()
     end
   end
 
@@ -290,8 +288,8 @@ defmodule MySensors.Node do
     end
 
     def broadcast(specs) do
-      event = new(specs)
-      Bus.broadcast("nodes_events", {:mysensors, :node_event, event})
+      new(specs)
+      |> Bus.broadcast_node_event()
     end
   end
 end

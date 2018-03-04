@@ -52,13 +52,13 @@ defmodule MySensors.Gateway do
   def sync_message(message, timeout \\ @ack_timeout) do
     task =
       Task.async(fn ->
-        Bus.subscribe("message_acks")
+        Bus.subscribe_node(message.node_id)
 
         message = %{message | ack: true}
         :ok = send_message(message)
 
         receive do
-          {"message_acks", ^message} -> message
+          {:mysensors, :message, ^message} -> message
         end
       end)
 
@@ -95,11 +95,19 @@ defmodule MySensors.Gateway do
   def version do
     task =
       Task.async(fn ->
-        Bus.subscribe("internal")
+        TransportBus.subscribe_incoming()
         :ok = send_message(0, 255, :internal, I_VERSION)
 
         receive do
-          {"internal", %{child_sensor_id: 255, command: :internal, node_id: 0, type: I_VERSION, payload: version}} -> version
+          {:mysensors_incoming,
+           %{
+             child_sensor_id: 255,
+             command: :internal,
+             node_id: 0,
+             type: I_VERSION,
+             payload: version
+           }} ->
+            version
         end
       end)
 
@@ -118,51 +126,38 @@ defmodule MySensors.Gateway do
 
   # Init
   def init(nil) do
-    Bus.subscribe("internal")
     TransportBus.subscribe_incoming()
-
     {:ok, %{}}
   end
 
-  # Handle incoming acks
-  def handle_info({:mysensors_incoming, message = %{ack: true}}, state) do
-    #Logger.debug "Forwarding ack: #{message}"
-    Bus.broadcast("message_acks", message)
-    {:noreply, state}
-  end
-
-  # Forward incoming internal messages
-  def handle_info({:mysensors_incoming, message = %{command: :internal}}, state) do
-    #Logger.debug "Forwarding internal command: #{message}"
-    Bus.broadcast("internal", message)
-    {:noreply, state}
-  end
-
-  # Forward incoming presentation messages
-  def handle_info({:mysensors_incoming, message = %{command: :presentation}}, state) do
-    #Logger.debug "Forwarding presentation: #{message}"
-    Bus.broadcast("presentation", message)
-    {:noreply, state}
-  end
-
   # Forward requests to nodes
-  def handle_info({:mysensors_incoming, message = %{node_id: node_id, command: c}}, state) when c in [:req, :set] do
-    #Logger.debug "Forwarding node event: #{message}"
-    Bus.broadcast("node_#{node_id}", message)
+  def handle_info({:mysensors_incoming, message = %{command: c}}, state) when c in [:req, :set] do
+    Bus.broadcast_node_message(message)
     {:noreply, state}
   end
 
+  # Discard presentation messages
+  def handle_info({:mysensors_incoming, %{command: :presentation}}, state) do
+    {:noreply, state}
+  end
+
+  # Discard unused gateway commands
+  def handle_info({:mysensors_incoming, %{command: :internal, type: type}}, state)
+      when type in [I_VERSION] do
+    {:noreply, state}
+  end
 
   # Forward log messages
-  def handle_info({"internal", %{command: :internal, type: I_LOG_MESSAGE, payload: log}}, state) do
-    Logger.debug("Received log message: #{log}")
-    Bus.broadcast("gwlog", log)
+  def handle_info(
+        {:mysensors_incoming, %{command: :internal, type: I_LOG_MESSAGE, payload: log}},
+        state
+      ) do
+    Bus.broadcast_log(log)
     {:noreply, state}
   end
 
-
   # Handle time requests
-  def handle_info({"internal", msg = %{command: :internal, type: I_TIME}}, state) do
+  def handle_info({:mysensors_incoming, msg = %{command: :internal, type: I_TIME}}, state) do
     Logger.debug("Received time request: #{msg}")
 
     send_message(
@@ -177,7 +172,7 @@ defmodule MySensors.Gateway do
   end
 
   # Handle config requests
-  def handle_info({"internal", msg = %{command: :internal, type: I_CONFIG}}, state) do
+  def handle_info({:mysensors_incoming, msg = %{command: :internal, type: I_CONFIG}}, state) do
     Logger.debug("Received configuration request: #{msg}")
 
     payload =
@@ -191,10 +186,9 @@ defmodule MySensors.Gateway do
     {:noreply, state}
   end
 
-
   # Forward remaining internal commands to related node
-  def handle_info({"internal", msg = %{command: :internal, node_id: node_id}}, state) do
-    Bus.broadcast("node_#{node_id}", msg)
+  def handle_info({:mysensors_incoming, msg = %{command: :internal}}, state) do
+    Bus.broadcast_node_message(msg)
     {:noreply, state}
   end
 
@@ -203,5 +197,4 @@ defmodule MySensors.Gateway do
     Logger.warn("Unknown message: #{inspect(msg)}")
     {:noreply, state}
   end
-
 end

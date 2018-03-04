@@ -6,6 +6,8 @@ defmodule MySensors.MessageQueue do
   A queue for MySensors messages
   """
 
+  # TODO max retry count
+
   use GenServer, start: {__MODULE__, :start_link, []}
   require Logger
 
@@ -71,6 +73,14 @@ defmodule MySensors.MessageQueue do
     GenServer.cast(pid, {:flush, filter})
   end
 
+  @doc """
+  Clear the queue
+  """
+  @spec clear(pid, fun) :: :ok
+  def clear(pid, filter \\ fn msg -> match?(%{}, msg) end) do
+    GenServer.cast(pid, {:clear, filter})
+  end
+
   ###############
   #  Internals
   ###############
@@ -96,6 +106,15 @@ defmodule MySensors.MessageQueue do
     {:noreply, _enqueue_message(state, message)}
   end
 
+  # Handle clear cast
+  def handle_cast({:clear, filter}, state) do
+    message_queue =
+      state.message_queue
+      |> Enum.filter(fn msg -> filter.(msg) end)
+
+    {:noreply, %{state | message_queue: message_queue}}
+  end
+
   # Handle flush cast
   def handle_cast({:flush, filter}, state) do
     message_queue =
@@ -106,7 +125,8 @@ defmodule MySensors.MessageQueue do
             _async_send(msg)
             false
 
-          false -> true
+          false ->
+            true
         end
       end)
 
@@ -114,7 +134,7 @@ defmodule MySensors.MessageQueue do
   end
 
   # Handle message sender's shutdown
-  def handle_info(msg = {:DOWN, _, _, _, {:shutdown, reason}}, state) do
+  def handle_info({:DOWN, _, _, _, {:shutdown, reason}}, state) do
     case reason do
       {:ok, _} -> {:noreply, state}
       {:timeout, msg} -> {:noreply, _enqueue_message(state, msg)}
@@ -122,6 +142,8 @@ defmodule MySensors.MessageQueue do
   end
 
   # Enqueue a message
+  # TODO don't enqueue a message if an equivalent one is already waiting
+  # TODO overwrite payload for equivalent :set messages
   defp _enqueue_message(state, message) do
     %{state | message_queue: state.message_queue ++ [message]}
   end
@@ -132,8 +154,9 @@ defmodule MySensors.MessageQueue do
     Process.monitor(pid)
   end
 
-
+  # Simple server sending a message and waiting for the ack
   defmodule Sender do
+    @moduledoc false
     use GenServer
 
     def init(message) do
@@ -144,5 +167,4 @@ defmodule MySensors.MessageQueue do
       {:stop, {:shutdown, {MySensors.Gateway.sync_message(state), state}}, state}
     end
   end
-
 end
