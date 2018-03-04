@@ -14,7 +14,7 @@ defmodule MySensors do
     children = [
       MySensors.Bus,
       MySensors.TransportBus,
-      MySensors.Network,
+      MySensors.Network
     ]
 
     children =
@@ -24,11 +24,11 @@ defmodule MySensors do
       end
 
     children =
-      case Application.get_env(:mysensors, :serial, true) do
-        false ->
+      case Application.get_env(:mysensors, :serial_bridge, nil) do
+        nil ->
           children
 
-        true ->
+        _ ->
           children ++
             [
               {Nerves.UART, [name: Nerves.UART]},

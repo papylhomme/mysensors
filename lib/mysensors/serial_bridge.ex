@@ -12,10 +12,13 @@ defmodule MySensors.SerialBridge do
 
   # Configuration
 
-  Use `:uart` to set a serial device. You can use `Nerves.UART.enumerate/0` to obtain a list of available devices.
+  Use `:serial_bridge` to configure the bridge. You can use `Nerves.UART.enumerate/0` to obtain a list of available devices.
 
       config :mysensors,
-        uart: "ttyUSB0"
+        serial_bridge: %{
+          device: "ttyUSB0",
+          speed: 115200
+        }
   """
 
   use GenServer, start: {__MODULE__, :start_link, []}
@@ -42,21 +45,24 @@ defmodule MySensors.SerialBridge do
 
   # Initialize the serial connection at server startup
   def init(nil) do
-    serial_dev = Application.get_env(:mysensors, :uart)
-    if is_nil(serial_dev), do: raise("Missing configuration key :uart")
+    config = Application.get_env(:mysensors, :serial_bridge)
+    if is_nil(config), do: raise("Missing configuration key :serial_bridge")
 
-    Logger.info("Starting serial bridge on #{serial_dev}")
+    device = config.device
+    speed = config.speed
+
+    Logger.info("Starting serial bridge on #{device}")
     TransportBus.subscribe_outgoing()
 
-    case _try_connect(serial_dev) do
-      :ok -> {:ok, %{serial_dev: serial_dev, status: :connected}}
-      _ -> {:ok, %{serial_dev: serial_dev, status: :disconnected}, @retry_timeout}
+    case _try_connect(device, speed) do
+      :ok -> {:ok, %{device: device, speed: speed, status: :connected}}
+      _ -> {:ok, %{device: device, speed: speed, status: :disconnected}, @retry_timeout}
     end
   end
 
   # Handle timeout to reconnect the UART
-  def handle_info(:timeout, state = %{status: :disconnected, serial_dev: serial_dev}) do
-    case _try_connect(serial_dev) do
+  def handle_info(:timeout, state = %{status: :disconnected, device: device, speed: speed}) do
+    case _try_connect(device, speed) do
       :ok -> {:noreply, %{state | status: :connected}}
       _ -> {:noreply, state, @retry_timeout}
     end
@@ -69,14 +75,14 @@ defmodule MySensors.SerialBridge do
   end
 
   # Handle incoming messages
-  def handle_info(msg = {:nerves_uart, _, _}, state = %{serial_dev: serial_dev}) do
+  def handle_info(msg = {:nerves_uart, _, _}, state = %{device: device}) do
     case msg do
       # error
-      {:nerves_uart, ^serial_dev, {:error, e}} ->
+      {:nerves_uart, ^device, {:error, e}} ->
         Logger.error("UART error: #{inspect(e)}")
 
       # message received
-      {:nerves_uart, ^serial_dev, str} ->
+      {:nerves_uart, ^device, str} ->
         str
         |> Message.parse()
         |> TransportBus.broadcast_incoming()
@@ -102,26 +108,26 @@ defmodule MySensors.SerialBridge do
   end
 
   # Try to connect to the serial gateway
-  defp _try_connect(serial_dev) do
-    case Map.has_key?(Nerves.UART.enumerate(), serial_dev) do
+  defp _try_connect(device, speed) do
+    case Map.has_key?(Nerves.UART.enumerate(), device) do
       false ->
-        Logger.debug("Serial device #{serial_dev} not present, will retry later")
+        Logger.debug("Serial device #{device} not present, will retry later")
         :not_present
 
       true ->
         case Nerves.UART.open(
                Nerves.UART,
-               serial_dev,
-               speed: 115_200,
+               device,
+               speed: speed,
                active: true,
                framing: {Nerves.UART.Framing.Line, separator: "\n"}
              ) do
           :ok ->
-            Logger.info("Connected to serial device #{serial_dev}")
+            Logger.info("Connected to serial device #{device}")
             :ok
 
           {:error, reason} ->
-            Logger.error("Error connecting to serial device #{serial_dev}: #{inspect(reason)}")
+            Logger.error("Error connecting to serial device #{device}: #{inspect(reason)}")
             :error
         end
     end

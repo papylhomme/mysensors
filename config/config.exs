@@ -32,5 +32,9 @@ config :logger, level: :info
 
 
 config :mysensors,
-  uart: "ttyUSB0",
-  measure: :metric
+  gateway: true,
+  measure: :metric,
+  serial_bridge: %{
+    device: "ttyUSB0",
+    speed: 115200
+  }
