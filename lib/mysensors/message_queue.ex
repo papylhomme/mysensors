@@ -69,7 +69,7 @@ defmodule MySensors.MessageQueue do
   Flush the queue
   """
   @spec flush(pid, fun) :: :ok
-  def flush(pid, filter \\ fn msg -> match?(%{}, msg) end) do
+  def flush(pid, filter \\ fn _msg -> true end) do
     GenServer.cast(pid, {:flush, filter})
   end
 
@@ -77,7 +77,7 @@ defmodule MySensors.MessageQueue do
   Clear the queue
   """
   @spec clear(pid, fun) :: :ok
-  def clear(pid, filter \\ fn msg -> match?(%{}, msg) end) do
+  def clear(pid, filter \\ fn _msg -> true end) do
     GenServer.cast(pid, {:clear, filter})
   end
 
@@ -110,7 +110,7 @@ defmodule MySensors.MessageQueue do
   def handle_cast({:clear, filter}, state) do
     message_queue =
       state.message_queue
-      |> Enum.filter(fn msg -> filter.(msg) end)
+      |> Enum.reject(fn msg -> filter.(msg) end)
 
     {:noreply, %{state | message_queue: message_queue}}
   end
@@ -142,10 +142,28 @@ defmodule MySensors.MessageQueue do
   end
 
   # Enqueue a message
-  # TODO don't enqueue a message if an equivalent one is already waiting
-  # TODO overwrite payload for equivalent :set messages
+  # prevent multiple :set messages for the same sensor
+  defp _enqueue_message(state, message = %{command: :set}) do
+    m = Map.delete(message, :payload)
+
+    case Enum.find_index(state.message_queue, fn msg ->
+           msg |> Map.delete(:payload) |> Map.equal?(m)
+         end) do
+      nil ->
+        %{state | message_queue: state.message_queue ++ [message]}
+
+      idx ->
+        %{state | message_queue: List.delete_at(state.message_queue, idx) ++ [message]}
+    end
+  end
+
+  # Enqueue a message
+  # don't enqueue if an equivalent message is already waiting
   defp _enqueue_message(state, message) do
-    %{state | message_queue: state.message_queue ++ [message]}
+    case Enum.find(state.message_queue, fn msg -> match?(^message, msg) end) do
+      nil -> %{state | message_queue: state.message_queue ++ [message]}
+      _ -> state
+    end
   end
 
   # Try to send a message
