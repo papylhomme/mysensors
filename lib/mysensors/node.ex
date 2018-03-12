@@ -188,10 +188,22 @@ defmodule MySensors.Node do
           NodeUpdatedEvent.broadcast(node)
           node
 
-        # handle heartbeat response
-        I_HEARTBEAT_RESPONSE ->
-          Logger.debug("Node #{node.node_id} handling heartbeat")
-          node = %{node | last_seen: DateTime.utc_now()}
+        # handle pre sleep notification
+        I_PRE_SLEEP_NOTIFICATION ->
+          Logger.debug("Node #{node.node_id} handling pre sleep")
+          node = %{node | status: "SLEEPING", last_seen: DateTime.utc_now()}
+          NodeUpdatedEvent.broadcast(node)
+          node
+
+        # handle post sleep notification
+        I_POST_SLEEP_NOTIFICATION ->
+          Logger.debug("Node #{node.node_id} waking up")
+
+          # flush queued message
+          MessageQueue.flush(state.message_queue)
+
+          # update status
+          node = %{node | status: "RUNNING", last_seen: DateTime.utc_now()}
           NodeUpdatedEvent.broadcast(node)
           node
 
@@ -201,26 +213,6 @@ defmodule MySensors.Node do
       end
 
     {:noreply, %{state | node: new_node}}
-  end
-
-  # Handle running status provided by NodeManager's service messages
-  # When node awakes, flush the queued messages
-  # TODO replace by new internal commands POST and PRE SLEEP (mysensors 2.2)
-  def handle_info(
-        {:mysensors, :message,
-         %{command: :set, type: V_CUSTOM, child_sensor_id: 200, payload: payload}},
-        state = %{node: node}
-      ) do
-    Logger.debug("Node #{node.node_id} handling status: #{payload}")
-
-    # update status
-    node = %{node | status: payload}
-    NodeUpdatedEvent.broadcast(node)
-
-    # flush queued message
-    MessageQueue.flush(state.message_queue)
-
-    {:noreply, %{state | node: node}}
   end
 
   # Handle incoming sensor messages

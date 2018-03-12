@@ -158,14 +158,12 @@ defmodule MySensors.Network do
   end
 
   # Handle node awakening to flush related presentation requests
-  # TODO replace by new internal commands POST and PRE SLEEP (mysensors 2.2)
   def handle_info(
         {:mysensors_incoming,
-         _msg = %{
-           command: :set,
-           child_sensor_id: 200,
-           type: V_CUSTOM,
-           payload: "AWAKE",
+         %{
+           command: :internal,
+           child_sensor_id: 255,
+           type: I_POST_SLEEP_NOTIFICATION,
            node_id: node_id
          }},
         state
