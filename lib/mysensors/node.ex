@@ -9,8 +9,6 @@ defmodule MySensors.Node do
   A server to interract with a MySensors node
   """
 
-  # TODO provide access to the message queue
-
   defstruct node_id: nil,
             type: nil,
             version: nil,
@@ -76,6 +74,14 @@ defmodule MySensors.Node do
   end
 
   @doc """
+  Get the node's message queue
+  """
+  @spec queue(pid) :: pid
+  def queue(pid) do
+    GenServer.call(pid, :queue)
+  end
+
+  @doc """
   Handle a specs updated event
   """
   @spec update_specs(pid, t) :: :ok
@@ -127,12 +133,17 @@ defmodule MySensors.Node do
      }}
   end
 
-  # Handle info request
+  # Handle info call
   def handle_call(:info, _from, state) do
     {:reply, state.node, state}
   end
 
-  # Handle list_sensors
+  # Handle queue call
+  def handle_call(:queue, _from, state) do
+    {:reply, state.message_queue, state}
+  end
+
+  # Handle list_sensors call
   def handle_call(:list_sensors, _from, state) do
     res =
       state.node.sensors
