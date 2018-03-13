@@ -90,14 +90,11 @@ defmodule MySensors.Node do
   end
 
   @doc """
-  Send a message to the node
-
-  For nodes reporting their running status (using [NodeManager](https://www.mysensors.org/download/node-manager)
-  service messages), messages are queued and sent when the node awakes.
+  Send a command to the node
   """
-  @spec send_message(pid, MySensors.Message.t()) :: :ok
-  def send_message(pid, message) do
-    GenServer.cast(pid, {:send_message, message})
+  @spec command(pid, Types.id(), Types.command(), Types.type(), String.t()) :: :ok
+  def command(pid, sensor_id, command, type, payload \\ "") do
+    GenServer.cast(pid, {:node_command, sensor_id, command, type, payload})
   end
 
   ###############
@@ -179,9 +176,9 @@ defmodule MySensors.Node do
     res
   end
 
-  # Handle send message
-  def handle_cast({:send_message, message}, state = %{message_queue: queue}) do
-    MessageQueue.push(queue, message)
+  # Handle node commands
+  def handle_cast({:node_command, sensor_id, command, type, payload}, state) do
+    MessageQueue.push(state.queue, state.node_id, sensor_id, command, type, payload)
     {:noreply, state}
   end
 
