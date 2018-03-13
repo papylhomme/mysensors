@@ -12,7 +12,6 @@ defmodule MySensors.Network do
   use GenServer, start: {__MODULE__, :start_link, []}
   require Logger
 
-  # TODO automatically request presentation from unknown nodes
 
   #########
   #  API
@@ -98,20 +97,8 @@ defmodule MySensors.Network do
   end
 
   # Handle request presentation cast
-  def handle_cast({:request_presentation, node}, state) do
-    presentations =
-      case Map.has_key?(state.presentations, node) do
-        true ->
-          Logger.warn("Presentation request already running for node #{node}!")
-          state.presentations
-
-        false ->
-          Logger.info("Requesting presentation from node #{node}...")
-          MessageQueue.push(state.queue, node, 255, :internal, I_PRESENTATION)
-          state.presentations |> _init_accumulator(node)
-      end
-
-    {:noreply, %{state | presentations: presentations}}
+  def handle_cast({:request_presentation, node_id}, state) do
+    {:noreply, %{state | presentations: _request_presentation(state, node_id)}}
   end
 
   # Handle presentation initiated by node
@@ -157,19 +144,27 @@ defmodule MySensors.Network do
     {:noreply, state}
   end
 
-  # Handle node awakening to flush related presentation requests
+  # Handle internal commands
   def handle_info(
         {:mysensors_incoming,
-         %{
+         msg = %{
            command: :internal,
            child_sensor_id: 255,
-           type: I_POST_SLEEP_NOTIFICATION,
            node_id: node_id
          }},
         state
       ) do
-    MessageQueue.flush(state.queue, fn msg -> msg.node_id == node_id end)
-    {:noreply, state}
+
+    # Handle node awakening to flush related presentation requests
+    if msg.type == I_POST_SLEEP_NOTIFICATION do
+      MessageQueue.flush(state.queue, fn msg -> msg.node_id == node_id end)
+    end
+
+    # Request presentation if node is unknown
+    case _node_known?(state, node_id) do
+      true -> {:noreply, state}
+      false -> {:noreply, %{state | presentations: _request_presentation(state, node_id)}}
+    end
   end
 
   # Discard remaining MySensors messages
@@ -185,7 +180,7 @@ defmodule MySensors.Network do
 
       true ->
         Logger.debug("Presentation accumulator for node #{acc.node_id} finishing #{inspect(acc)}")
-        _node_presentation(state.table, acc)
+        _node_presentation(state, acc)
     end
 
     {_, new_state} = pop_in(state, [:presentations, acc.node_id])
@@ -197,8 +192,8 @@ defmodule MySensors.Network do
   ##############
 
   # Start a supervised node server
-  defp _start_child(table, node_id) do
-    child_spec = Supervisor.child_spec({Node, {table, node_id}}, id: node_id)
+  defp _start_child(state, node_id) do
+    child_spec = Supervisor.child_spec({Node, {state.table, node_id}}, id: node_id)
     {:ok, _pid} = Supervisor.start_child(@supervisor, child_spec)
   end
 
@@ -214,18 +209,34 @@ defmodule MySensors.Network do
     not (is_nil(acc.node_id) or is_nil(acc.type) or map_size(acc.sensors) == 0)
   end
 
+  # Test whether is known in the system or not
+  defp _node_known?(state, node_id) do
+    :dets.lookup(state.table, node_id) != []
+  end
+
+  # Request presentation for the given node
+  defp _request_presentation(state, node_id) do
+    case Map.has_key?(state.presentations, node_id) do
+      true -> state.presentations
+      false ->
+        Logger.info("Requesting presentation from node #{node_id}...")
+        MessageQueue.push(state.queue, node_id, 255, :internal, I_PRESENTATION)
+        state.presentations |> _init_accumulator(node_id)
+      end
+  end
+
   # Handle presentation from a node
-  defp _node_presentation(table, acc = %{node_id: node_id}) do
-    case :dets.lookup(table, node_id) do
-      [] ->
+  defp _node_presentation(state, acc = %{node_id: node_id}) do
+    case _node_known?(state, node_id) do
+      false ->
         Logger.info("New node registration #{inspect(acc)}")
-        :ok = :dets.insert(table, {node_id, acc})
-        _start_child(table, node_id)
+        :ok = :dets.insert(state.table, {node_id, acc})
+        _start_child(state, node_id)
 
         Node.NodeDiscoveredEvent.broadcast(acc)
 
-      _ ->
-        :ok = :dets.insert(table, {node_id, acc})
+      true ->
+        :ok = :dets.insert(state.table, {node_id, acc})
         node = Node.ref(node_id)
         unless is_nil(Process.whereis(node)), do: Node.update_specs(node, acc)
     end
