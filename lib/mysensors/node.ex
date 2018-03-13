@@ -178,7 +178,7 @@ defmodule MySensors.Node do
 
   # Handle node commands
   def handle_cast({:node_command, sensor_id, command, type, payload}, state) do
-    MessageQueue.push(state.queue, state.node_id, sensor_id, command, type, payload)
+    MessageQueue.push(state.message_queue, state.node.node_id, sensor_id, command, type, payload)
     {:noreply, state}
   end
 

@@ -61,16 +61,18 @@ defmodule MySensors.Network do
     {:ok, queue} = MessageQueue.start_link()
     {:ok, _} = Supervisor.start_link([], strategy: :one_for_one, name: @supervisor)
 
+    state = %{table: tid, presentations: %{}, queue: queue}
+
     Logger.info("Initializing nodes from storage...")
 
-    :dets.traverse(tid, fn {id, _node_specs} ->
-      _start_child(tid, id)
+    :dets.traverse(state.table, fn {id, _node_specs} ->
+      _start_child(state, id)
       :continue
     end)
 
     MySensors.TransportBus.subscribe_incoming()
 
-    {:ok, %{table: tid, presentations: %{}, queue: queue}}
+    {:ok, state}
   end
 
   # Handle list_nodes call
