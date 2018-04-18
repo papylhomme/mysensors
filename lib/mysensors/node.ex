@@ -103,7 +103,7 @@ defmodule MySensors.Node do
 
   # Initialize the server
   def init({table, node_id}) do
-    Bus.subscribe_node(node_id)
+    Bus.subscribe_node_messages(node_id)
     {:ok, queue} = MessageQueue.start_link()
 
     [{_id, node_specs}] = :dets.lookup(table, node_id)
@@ -184,7 +184,7 @@ defmodule MySensors.Node do
 
   # Handle internal commands
   def handle_info(
-        {:mysensors, :message, msg = %{command: :internal, child_sensor_id: 255, type: type}},
+        {:mysensors, :node_messages, msg = %{command: :internal, child_sensor_id: 255, type: type}},
         state = %{node: node}
       ) do
     new_node =
@@ -225,7 +225,7 @@ defmodule MySensors.Node do
 
   # Handle incoming sensor messages
   def handle_info(
-        {:mysensors, :message, message = %{child_sensor_id: sensor_id}},
+        {:mysensors, :node_messages, message = %{child_sensor_id: sensor_id}},
         state = %{node: node}
       ) do
     if Map.has_key?(node.sensors, sensor_id) do
@@ -264,7 +264,7 @@ defmodule MySensors.Node do
 
     def broadcast(specs) do
       new(specs)
-      |> Bus.broadcast_node_event()
+      |> Bus.broadcast_nodes_events()
     end
   end
 
@@ -289,7 +289,7 @@ defmodule MySensors.Node do
 
     def broadcast(specs) do
       new(specs)
-      |> Bus.broadcast_node_event()
+      |> Bus.broadcast_nodes_events()
     end
   end
 end

@@ -184,7 +184,7 @@ defmodule MySensors.Sensor do
 
     def broadcast(mysensors_event, old_value, new_value) do
       new(mysensors_event, old_value, new_value)
-      |> Bus.broadcast_sensor_event()
+      |> Bus.broadcast_sensors_events()
     end
   end
 end

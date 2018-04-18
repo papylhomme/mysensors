@@ -105,7 +105,7 @@ defmodule MySensors.Network do
 
   # Handle presentation initiated by node
   def handle_info(
-        {:mysensors_incoming,
+        {:mysensors, :incoming,
          msg = %{command: :presentation, child_sensor_id: 255, node_id: node_id}},
         state
       ) do
@@ -128,7 +128,7 @@ defmodule MySensors.Network do
   end
 
   # Forward presentation messages to accumulator
-  def handle_info({:mysensors_incoming, msg = %{command: :presentation, node_id: node_id}}, state) do
+  def handle_info({:mysensors, :incoming, msg = %{command: :presentation, node_id: node_id}}, state) do
     acc = get_in(state, [:presentations, node_id])
     unless is_nil(acc), do: send(acc, msg)
     {:noreply, state}
@@ -136,7 +136,7 @@ defmodule MySensors.Network do
 
   # Forward sketch info messages to accumulator
   def handle_info(
-        {:mysensors_incoming,
+        {:mysensors, :incoming,
          msg = %{node_id: node_id, child_sensor_id: 255, command: :internal, type: t}},
         state
       )
@@ -148,7 +148,7 @@ defmodule MySensors.Network do
 
   # Handle internal commands
   def handle_info(
-        {:mysensors_incoming,
+        {:mysensors, :incoming,
          msg = %{
            command: :internal,
            child_sensor_id: 255,
@@ -170,7 +170,7 @@ defmodule MySensors.Network do
   end
 
   # Discard remaining MySensors messages
-  def handle_info({:mysensors_incoming, _msg}, state) do
+  def handle_info({:mysensors, :incoming, _msg}, state) do
     {:noreply, state}
   end
 

@@ -96,7 +96,7 @@ defmodule MySensors.SerialBridge do
   end
 
   # Handle outgoing messages
-  def handle_info({:mysensors_outgoing, message}, state) do
+  def handle_info({:mysensors, :outgoing, message}, state) do
     Nerves.UART.write(Nerves.UART, "#{Message.serialize(message)}\n")
     {:noreply, state}
   end
