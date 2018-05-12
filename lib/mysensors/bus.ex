@@ -11,14 +11,11 @@ defmodule MySensors.Bus do
 
   @bridge_name Application.get_env(:mysensors, :bus_name, __MODULE__)
 
-  @topic_log :gwlog
-  @topic_nodes_events :nodes_events
-  @topic_sensors_events :sensors_events
 
-
-  topic_helpers(@bridge_name, @topic_log, :log)
-  topic_helpers(@bridge_name, @topic_sensors_events, :sensors_events)
-  topic_helpers(@bridge_name, @topic_nodes_events, :nodes_events)
+  topic_helpers(@bridge_name, :gateway_logs)
+  topic_helpers(@bridge_name, :sensors_events)
+  topic_helpers(@bridge_name, :nodes_events)
+  topic_helpers(@bridge_name, :node_commands, fn node_id -> "node_#{node_id}_commands" end)
 
 
   @doc """

@@ -152,7 +152,7 @@ defmodule MySensors.Gateway do
         {:mysensors, :incoming, %{command: :internal, type: I_LOG_MESSAGE, payload: log}},
         state
       ) do
-    Bus.broadcast_log(log)
+    Bus.broadcast_gateway_logs(log)
     {:noreply, state}
   end
 

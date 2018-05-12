@@ -104,10 +104,14 @@ defmodule MySensors.Node do
   # Initialize the server
   def init({table, node_id}) do
     Bus.subscribe_node_messages(node_id)
-    {:ok, queue} = MessageQueue.start_link()
 
+    # init message queue
+    {:ok, queue} = MessageQueue.start_link(fn event ->
+      Bus.broadcast_node_commands(node_id, event)
+    end)
+
+    # init sensors
     [{_id, node_specs}] = :dets.lookup(table, node_id)
-
     sensors =
       for {id, sensor_specs} <- node_specs.sensors, into: %{} do
         {:ok, pid} = Sensor.start_link(node_specs.node_id, sensor_specs)

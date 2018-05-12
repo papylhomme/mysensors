@@ -1,6 +1,6 @@
 defmodule MySensors.MessageQueue do
   alias MySensors.Message
-  alias __MODULE__.Sender
+  alias __MODULE__.Item
 
   @moduledoc """
   A queue for MySensors messages
@@ -8,7 +8,7 @@ defmodule MySensors.MessageQueue do
 
   # TODO max retry count
 
-  use GenServer, start: {__MODULE__, :start_link, []}
+  use GenServer
   require Logger
 
   #########
@@ -18,9 +18,9 @@ defmodule MySensors.MessageQueue do
   @doc """
   Start a new message queue
   """
-  @spec start_link() :: GenServer.on_start()
-  def start_link() do
-    GenServer.start_link(__MODULE__, nil)
+  @spec start_link(fun | nil) :: GenServer.on_start()
+  def start_link(handler \\ nil) do
+    GenServer.start_link(__MODULE__, handler)
   end
 
   @doc """
@@ -86,8 +86,8 @@ defmodule MySensors.MessageQueue do
   ###############
 
   # Initialize the queue
-  def init(_params) do
-    {:ok, %{message_queue: []}}
+  def init(handler) do
+    {:ok, %{handler: handler, message_queue: []}}
   end
 
   # Handle list call
@@ -97,13 +97,13 @@ defmodule MySensors.MessageQueue do
 
   # Handle push cast
   def handle_cast({:push, message}, state) do
-    _async_send(message)
+    _async_send(state, Item.new(message))
     {:noreply, state}
   end
 
   # Handle queue cast
   def handle_cast({:queue, message}, state) do
-    {:noreply, _enqueue_message(state, message)}
+    {:noreply, _enqueue_message(state, Item.new(message))}
   end
 
   # Handle clear cast
@@ -111,6 +111,8 @@ defmodule MySensors.MessageQueue do
     message_queue =
       state.message_queue
       |> Enum.reject(fn msg -> filter.(msg) end)
+
+    _on_event(state, {:cleared})
 
     {:noreply, %{state | message_queue: message_queue}}
   end
@@ -122,7 +124,7 @@ defmodule MySensors.MessageQueue do
       |> Enum.filter(fn msg ->
         case filter.(msg) do
           true ->
-            _async_send(msg)
+            _async_send(state, msg)
             false
 
           false ->
@@ -136,8 +138,10 @@ defmodule MySensors.MessageQueue do
   # Handle message sender's shutdown
   def handle_info({:DOWN, _, _, _, {:shutdown, reason}}, state) do
     case reason do
-      {:ok, _} -> {:noreply, state}
       {:timeout, msg} -> {:noreply, _enqueue_message(state, msg)}
+      {:ok, msg} ->
+        _on_event(state, {:message_sent, msg})
+        {:noreply, state}
     end
   end
 
@@ -150,6 +154,7 @@ defmodule MySensors.MessageQueue do
            msg |> Map.delete(:payload) |> Map.equal?(m)
          end) do
       nil ->
+        _on_event(state, {:message_queued, message})
         %{state | message_queue: state.message_queue ++ [message]}
 
       idx ->
@@ -161,28 +166,53 @@ defmodule MySensors.MessageQueue do
   # don't enqueue if an equivalent message is already waiting
   defp _enqueue_message(state, message) do
     case Enum.find(state.message_queue, fn msg -> match?(^message, msg) end) do
-      nil -> %{state | message_queue: state.message_queue ++ [message]}
+      nil ->
+        _on_event(state, {:message_queued, message})
+        %{state | message_queue: state.message_queue ++ [message]}
       _ -> state
     end
   end
 
   # Try to send a message
-  defp _async_send(message) do
-    {:ok, pid} = GenServer.start(Sender, message)
-    Process.monitor(pid)
+  defp _async_send(state, message) do
+    Item.send(message)
+    |> Process.monitor
+
+    _on_event(state, {:sending_message, message})
+  end
+
+  # Notify handler with event
+  defp _on_event(state, event) do
+    unless is_nil(state.handler) do
+      state.handler.(event)
+    end
   end
 
   # Simple server sending a message and waiting for the ack
-  defmodule Sender do
+  defmodule Item do
     @moduledoc false
     use GenServer
+
+    defstruct id: nil, retry: 0, timestamp: nil, last_retry: nil, message: nil
+
+
+    def new(message) do
+      %__MODULE__{id: :erlang.unique_integer, timestamp: DateTime.utc_now, message: message}
+    end
+
+
+    def send(message) do
+      {:ok, pid} = GenServer.start(__MODULE__, %__MODULE__{message | retry: message.retry + 1, last_retry: DateTime.utc_now})
+      pid
+    end
+
 
     def init(message) do
       {:ok, message, 0}
     end
 
     def handle_info(:timeout, state) do
-      {:stop, {:shutdown, {MySensors.Gateway.sync_message(state), state}}, state}
+      {:stop, {:shutdown, {MySensors.Gateway.sync_message(state.message), state}}, state}
     end
   end
 end
