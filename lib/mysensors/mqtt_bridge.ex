@@ -43,7 +43,7 @@ defmodule MySensors.MQTTBridge do
   """
   @spec start_link(String.t(), map) :: GenServer.on_start()
   def start_link(uuid, config) do
-    GenServer.start_link(__MODULE__, {uuid, config}, name: __MODULE__)
+    GenServer.start_link(__MODULE__, {uuid, config})
   end
 
 

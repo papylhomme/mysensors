@@ -144,9 +144,7 @@ defmodule MySensors.Node do
   def handle_call(:list_sensors, _from, state) do
     res =
       state.node.sensors
-      |> Enum.map(fn {_uuid, {pid, _spec}} ->
-        {pid, Sensor.info(pid)}
-      end)
+      |> Enum.map(fn {_uuid, {pid, _spec}} -> Sensor.info(pid) end)
 
     {:reply, res, state}
   end

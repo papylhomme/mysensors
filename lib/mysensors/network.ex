@@ -33,6 +33,15 @@ defmodule MySensors.Network do
     GenServer.start_link(__MODULE__, {config}, name: MySensors.by_uuid(config.uuid))
   end
 
+
+  @doc """
+  Retrieve information about the network
+  """
+  def info(server) do
+    GenServer.call(server, :info)
+  end
+
+
   @doc """
   List the known nodes
   """
@@ -170,13 +179,24 @@ defmodule MySensors.Network do
 
 
     # Init transport and state
-    state =
+    initial_state = %{
+      id: config.id,
+      uuid: config.uuid,
+      supervisor: supervisor,
+      table: tid,
+      presentations: %{},
+      queue: queue,
+      transport_uuid: nil
+    }
+
+    state = 
       case config.transport do
-        {:remote, transport_uuid} ->
-          %{uuid: config.uuid, transport_uuid: transport_uuid, supervisor: supervisor, table: tid, presentations: %{}, queue: queue}
+        {:remote, node, transport_uuid} ->
+          Elixir.Node.ping node
+          %{initial_state | transport_uuid: transport_uuid}
         {module, transport_config} ->
           apply(module, :start_link, [config.uuid, transport_config])
-          %{uuid: config.uuid, transport_uuid: config.uuid, supervisor: supervisor, table: tid, presentations: %{}, queue: queue}
+          %{initial_state | transport_uuid: config.uuid}
       end
 
     # Init nodes
@@ -206,14 +226,19 @@ defmodule MySensors.Network do
     {:noreply, %{state | presentations: _request_presentation(state, node_id)}}
   end
 
+
+  # Handle info call
+  def handle_call(:info, _from, state) do
+    {:reply, state, state}
+  end
+
+
   # Handle list_nodes call
   # TODO use db to list nodes, and report crashed ones (when its server is no longer running)
   def handle_call(:list_nodes, _from, state) do
     res =
       Supervisor.which_children(state.supervisor)
-      |> Enum.map(fn {_id, pid, _, _} ->
-        {pid, Node.info(pid)}
-      end)
+      |> Enum.map(fn {_id, pid, _, _} -> Node.info(pid) end)
 
     {:reply, res, state}
   end
@@ -229,12 +254,6 @@ defmodule MySensors.Network do
   # Create a task sending the message and awaiting the ack
   def handle_call({:node_uuid, node_id}, _from, state) do
     {:reply, _node_uuid(state.uuid, node_id), state}
-  end
-
-
-  # Returns info about the network
-  def handle_call(:info, _from, state) do
-    {:reply, state, state}
   end
 
 
