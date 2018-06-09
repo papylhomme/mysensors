@@ -7,7 +7,7 @@ defmodule MySensors.MQTTBridge do
   # Default config values
   @default %{
     client_id: "mysensors_client_id",
-    host: "localhost",
+    host: 'localhost',
     port: 1883,
     root: "mysensors"
   }
@@ -29,7 +29,7 @@ defmodule MySensors.MQTTBridge do
 
   """
 
-  use GenServer, start: {__MODULE__, :start_link, []}
+  use GenServer, start: {__MODULE__, :start_link, [:uuid, :config]}
   require Logger
 
 
@@ -41,9 +41,9 @@ defmodule MySensors.MQTTBridge do
   @doc """
   Start the server
   """
-  @spec start_link :: GenServer.on_start()
-  def start_link do
-    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
+  @spec start_link(String.t(), map) :: GenServer.on_start()
+  def start_link(uuid, config) do
+    GenServer.start_link(__MODULE__, {uuid, config}, name: __MODULE__)
   end
 
 
@@ -53,11 +53,8 @@ defmodule MySensors.MQTTBridge do
   ###############
 
   # Initialize the serial connection at server startup
-  def init(nil) do
+  def init({uuid, config}) do
     # Init config
-    config = Application.get_env(:mysensors, :mqtt_bridge)
-    if is_nil(config), do: raise("Missing configuration key :mqtt_bridge")
-
     config = %{
       client_id: Map.get(config, :client_id, @default.client_id),
       host: Map.get(config, :host, @default.host),
@@ -67,14 +64,14 @@ defmodule MySensors.MQTTBridge do
 
     # Init MQTT Client
     Logger.info("Starting mqtt bridge '#{config.client_id}' on #{config.host}##{config.port}")
-    Tortoise.Supervisor.start_child(
+    {:ok, _transport} = Tortoise.Supervisor.start_child(
       client_id: config.client_id,
-      handler: {__MODULE__.Handler, []},
-      server: {:tcp, config.host, config.port},
+      handler: {__MODULE__.Handler, [uuid]},
+      server: {Tortoise.Transport.Tcp, host: config.host, port: config.port},
       subscriptions: [{"#{config.root}-out/#", 0}])
 
     # Transport subscription
-    TransportBus.subscribe_outgoing()
+    TransportBus.subscribe_outgoing(uuid)
 
     {:ok, %{config: config}}
   end
@@ -116,8 +113,8 @@ defmodule MySensors.MQTTBridge do
     @behaviour Tortoise.Handler
 
 
-    def init(_opts) do
-      {:ok, nil}
+    def init(uuid) do
+      {:ok, uuid}
     end
 
     def connection(_status, state) do
@@ -131,11 +128,13 @@ defmodule MySensors.MQTTBridge do
     def handle_message(["mysensors-out" | topic], payload, state) do
       case topic do
         [_node_id, _sensor_id, _command, _ack, _type] ->
-          topic
-          |> List.insert_at(-1, payload)
-          |> Enum.join(";")
-          |> Message.parse
-          |> TransportBus.broadcast_incoming
+          msg =
+            topic
+            |> List.insert_at(-1, payload)
+            |> Enum.join(";")
+            |> Message.parse
+
+          TransportBus.broadcast_incoming(state, msg)
 
         _ -> Logger.warn "Received unexpected message from #{inspect topic}: #{inspect payload}"
       end

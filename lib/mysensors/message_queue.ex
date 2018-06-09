@@ -19,8 +19,8 @@ defmodule MySensors.MessageQueue do
   Start a new message queue
   """
   @spec start_link(fun | nil) :: GenServer.on_start()
-  def start_link(handler \\ nil) do
-    GenServer.start_link(__MODULE__, handler)
+  def start_link(network_uuid, handler \\ nil) do
+    GenServer.start_link(__MODULE__, {network_uuid, handler})
   end
 
   @doc """
@@ -86,8 +86,8 @@ defmodule MySensors.MessageQueue do
   ###############
 
   # Initialize the queue
-  def init(handler) do
-    {:ok, %{handler: handler, message_queue: []}}
+  def init({network_uuid, handler}) do
+    {:ok, %{network_uuid: network_uuid, handler: handler, message_queue: []}}
   end
 
   # Handle list call
@@ -97,20 +97,20 @@ defmodule MySensors.MessageQueue do
 
   # Handle push cast
   def handle_cast({:push, message}, state) do
-    _async_send(state, Item.new(message))
+    _async_send(state, Item.new(state.network_uuid, message))
     {:noreply, state}
   end
 
   # Handle queue cast
   def handle_cast({:queue, message}, state) do
-    {:noreply, _enqueue_message(state, Item.new(message))}
+    {:noreply, _enqueue_message(state, Item.new(state.network_uuid, message))}
   end
 
   # Handle clear cast
   def handle_cast({:clear, filter}, state) do
     message_queue =
       state.message_queue
-      |> Enum.reject(fn msg -> filter.(msg) end)
+      |> Enum.reject(fn item -> filter.(item) end)
 
     _on_event(state, {:cleared})
 
@@ -121,10 +121,10 @@ defmodule MySensors.MessageQueue do
   def handle_cast({:flush, filter}, state) do
     message_queue =
       state.message_queue
-      |> Enum.filter(fn msg ->
-        case filter.(msg) do
+      |> Enum.filter(fn item ->
+        case filter.(item) do
           true ->
-            _async_send(state, msg)
+            _async_send(state, item)
             false
 
           false ->
@@ -138,47 +138,48 @@ defmodule MySensors.MessageQueue do
   # Handle message sender's shutdown
   def handle_info({:DOWN, _, _, _, {:shutdown, reason}}, state) do
     case reason do
-      {:timeout, msg} -> {:noreply, _enqueue_message(state, msg)}
-      {:ok, msg} ->
-        _on_event(state, {:message_sent, msg})
+      {:timeout, item} -> {:noreply, _enqueue_message(state, item)}
+      {:ok, item} ->
+        _on_event(state, {:message_sent, item})
         {:noreply, state}
     end
   end
 
   # Enqueue a message
   # prevent multiple :set messages for the same sensor
-  defp _enqueue_message(state, message = %{command: :set}) do
-    m = Map.delete(message, :payload)
+  defp _enqueue_message(state, item = %{message: %{command: :set}}) do
+    m = Map.delete(item.message, :payload)
 
-    case Enum.find_index(state.message_queue, fn msg ->
-           msg |> Map.delete(:payload) |> Map.equal?(m)
+    case Enum.find_index(state.message_queue, fn i ->
+           i.message |> Map.delete(:payload) |> Map.equal?(m)
          end) do
       nil ->
-        _on_event(state, {:message_queued, message})
-        %{state | message_queue: state.message_queue ++ [message]}
+        _on_event(state, {:message_queued, item})
+        %{state | message_queue: state.message_queue ++ [item]}
 
       idx ->
-        %{state | message_queue: List.delete_at(state.message_queue, idx) ++ [message]}
+        %{state | message_queue: List.delete_at(state.message_queue, idx) ++ [item]}
     end
   end
 
   # Enqueue a message
   # don't enqueue if an equivalent message is already waiting
-  defp _enqueue_message(state, message) do
-    case Enum.find(state.message_queue, fn msg -> match?(^message, msg) end) do
+  defp _enqueue_message(state, item) do
+    case Enum.find(state.message_queue, fn i -> match?(^item, i) end) do
       nil ->
-        _on_event(state, {:message_queued, message})
-        %{state | message_queue: state.message_queue ++ [message]}
+        _on_event(state, {:message_queued, item})
+        %{state | message_queue: state.message_queue ++ [item]}
       _ -> state
     end
   end
 
   # Try to send a message
-  defp _async_send(state, message) do
-    Item.send(message)
+  defp _async_send(state, item) do
+    item
+    |> Item.send
     |> Process.monitor
 
-    _on_event(state, {:sending_message, message})
+    _on_event(state, {:sending_message, item})
   end
 
   # Notify handler with event
@@ -193,26 +194,32 @@ defmodule MySensors.MessageQueue do
     @moduledoc false
     use GenServer
 
-    defstruct id: nil, retry: 0, timestamp: nil, last_retry: nil, message: nil
+    defstruct id: nil, network_uuid: nil, retry: 0, timestamp: nil, last_retry: nil, message: nil
 
-
-    def new(message) do
-      %__MODULE__{id: :erlang.unique_integer, timestamp: DateTime.utc_now, message: message}
+    # Create a new item struct from the given message
+    def new(network_uuid, message) do
+      %__MODULE__{id: :erlang.unique_integer, network_uuid: network_uuid, timestamp: DateTime.utc_now, message: message}
     end
 
-
-    def send(message) do
-      {:ok, pid} = GenServer.start(__MODULE__, %__MODULE__{message | retry: message.retry + 1, last_retry: DateTime.utc_now})
+    # Create a new queue item and try to send the given message
+    def send(item) do
+      {:ok, pid} = GenServer.start(__MODULE__, %__MODULE__{item | retry: item.retry + 1, last_retry: DateTime.utc_now})
       pid
     end
 
-
-    def init(message) do
-      {:ok, message, 0}
+    # Start the server and immediately timeout to send the message
+    def init(item) do
+      {:ok, item, 0}
     end
 
+    # Handle timeout to send the message
     def handle_info(:timeout, state) do
-      {:stop, {:shutdown, {MySensors.Gateway.sync_message(state.message), state}}, state}
+      status =
+        state.network_uuid
+        |> MySensors.by_uuid
+        |> MySensors.Network.sync_message(state.message)
+
+      {:stop, {:shutdown, {status, state}}, state}
     end
   end
 end

@@ -8,7 +8,7 @@ defmodule MySensors.Sensor do
   """
 
   # The sensor struct
-  defstruct id: nil, node_id: nil, type: nil, desc: nil, data: %{}
+  defstruct uuid: nil, node: nil, sensor_id: nil, type: nil, desc: nil, data: %{}
 
   @typedoc "A sensor specs"
   @type specs :: {Types.id(), Types.sensor(), String.t()}
@@ -21,8 +21,9 @@ defmodule MySensors.Sensor do
 
   @typedoc "Sensor's info"
   @type t :: %__MODULE__{
-          id: Types.id(),
-          node_id: Types.id(),
+          uuid: String.t(),
+          node: String.t(),
+          sensor_id: Types.id(),
           type: Types.sensor(),
           desc: String.t(),
           data: datas
@@ -34,21 +35,14 @@ defmodule MySensors.Sensor do
   #########
   #  API
   #########
-
-  @doc """
-  Helper generating an unique reference for the given node/sensor ids
-  """
-  @spec ref(Types.id(), Types.id()) :: atom
-  def ref(node_id, child_sensor_id) do
-    "#{MySensors.Node}#{node_id}.Sensor#{child_sensor_id}" |> String.to_atom()
-  end
+  
 
   @doc """
   Start the server
   """
-  @spec start_link(Types.id(), specs) :: GenServer.on_start()
-  def start_link(node_id, sensor_specs = {sensor_id, _, _}) do
-    GenServer.start_link(__MODULE__, {node_id, sensor_specs}, name: ref(node_id, sensor_id))
+  @spec start_link(String.t, pid, specs) :: GenServer.on_start()
+  def start_link(uuid, node, sensor_specs) do
+    GenServer.start_link(__MODULE__, {uuid, node, sensor_specs}, name: MySensors.by_uuid(uuid))
   end
 
   @doc """
@@ -96,8 +90,8 @@ defmodule MySensors.Sensor do
   ###############
 
   # Initialize the server
-  def init({node_id, {id, type, desc}}) do
-    {:ok, %__MODULE__{node_id: node_id, id: id, type: type, desc: desc, data: %{}}}
+  def init({uuid, node, {sensor_id, type, desc}}) do
+    {:ok, %__MODULE__{uuid: uuid, node: node, sensor_id: sensor_id, type: type, desc: desc, data: %{}}}
   end
 
   # Handle info request
@@ -117,9 +111,7 @@ defmodule MySensors.Sensor do
 
   # Handle sensor commands
   def handle_cast({:sensor_command, command, type, payload}, state) do
-    MySensors.Node.ref(state.node_id)
-    |> MySensors.Node.command(state.id, command, type, payload)
-
+    MySensors.Node.command(MySensors.by_uuid(state.node), state.sensor_id, command, type, payload)
     {:noreply, state}
   end
 
@@ -128,12 +120,11 @@ defmodule MySensors.Sensor do
     Logger.debug("#{_sensor_name(state)} received new #{type} value: #{value}")
 
     old_value = Map.get(state.data, type)
-
     new_value = {value, DateTime.utc_now()}
     data = Map.put(state.data, type, new_value)
 
     event
-    |> ValueUpdatedEvent.broadcast(old_value, new_value)
+    |> ValueUpdatedEvent.broadcast(state, old_value, new_value)
 
     {:noreply, %__MODULE__{state | data: data}}
   end
@@ -145,8 +136,9 @@ defmodule MySensors.Sensor do
   end
 
   # Create a readable sensor name
+  # TODO multi fix this or remove
   defp _sensor_name(state) do
-    "Sensor #{state.node_id}##{state.id} (#{state.type})"
+    "Sensor #{state.uuid} (#{state.type})"
   end
 
   defmodule ValueUpdatedEvent do
@@ -157,12 +149,11 @@ defmodule MySensors.Sensor do
     """
 
     # Event struct
-    defstruct node_id: nil, sensor_id: nil, type: nil, old: nil, new: {nil, nil}
+    defstruct sensor: nil, type: nil, old: nil, new: {nil, nil}
 
     @typedoc "The value updated event struct"
     @type t :: %__MODULE__{
-            node_id: Types.id(),
-            sensor_id: Types.id(),
+            sensor: String.t(),
             type: Types.type(),
             old: nil | Sensor.data(),
             new: Sensor.data()
@@ -171,19 +162,23 @@ defmodule MySensors.Sensor do
     @doc """
     Create a ValueUpdatedEvent from a MySensors sensor update event
     """
-    @spec new(MySensors.Message.sensor_updated(), Sensor.data(), Sensor.data()) :: t
-    def new(mysensors_event, old_value, new_value) do
+    @spec new(Sensor.t(), MySensors.Message.sensor_updated(), Sensor.data(), Sensor.data()) :: t
+    def new(sensor, mysensors_event, old_value, new_value) do
       %__MODULE__{
-        node_id: mysensors_event.node_id,
-        sensor_id: mysensors_event.child_sensor_id,
+        sensor: sensor.uuid,
         type: mysensors_event.type,
         old: old_value,
         new: new_value
       }
     end
 
-    def broadcast(mysensors_event, old_value, new_value) do
-      new(mysensors_event, old_value, new_value)
+
+    @doc """
+    Create and broadcast a ValueUpdatedEvent from a MySensors sensor update event
+    """
+    @spec broadcast(MySensors.Message.sensor_updated(), Sensor.t(), Sensor.data(), Sensor.data()) :: t
+    def broadcast(mysensors_event, sensor, old_value, new_value) do
+      new(sensor, mysensors_event, old_value, new_value)
       |> Bus.broadcast_sensors_events()
     end
   end

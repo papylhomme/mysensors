@@ -13,6 +13,6 @@
   "lager": {:git, "https://github.com/basho/lager.git", "81eaef0ce98fdbf64ab95665e3bc2ec4b24c7dac", [branch: "master"]},
   "nerves_uart": {:hex, :nerves_uart, "1.2.0", "195424116b925cd3bf9d666be036c2a80655e6ca0f8d447e277667a60005c50e", [:mix], [{:elixir_make, "~> 0.4", [hex: :elixir_make, repo: "hexpm", optional: false]}], "hexpm"},
   "phoenix_pubsub": {:hex, :phoenix_pubsub, "1.0.2", "bfa7fd52788b5eaa09cb51ff9fcad1d9edfeb68251add458523f839392f034c1", [:mix], [], "hexpm"},
-  "tortoise": {:hex, :tortoise, "0.1.0", "8b5d1215f6947539680baa52fe991e05d4507fbe0cb37aca03ad25a09970315f", [], [{:eqc_ex, "~> 1.4", [hex: :eqc_ex, repo: "hexpm", optional: false]}, {:gen_state_machine, "~> 2.0.2", [hex: :gen_state_machine, repo: "hexpm", optional: false]}], "hexpm"},
+  "tortoise": {:hex, :tortoise, "0.2.2", "65e15af492fbd63583ff01fe3bba4b55c2fe482c032421164522aac9b5305ee3", [:mix], [{:eqc_ex, "~> 1.4", [hex: :eqc_ex, repo: "hexpm", optional: false]}, {:gen_state_machine, "~> 2.0.2", [hex: :gen_state_machine, repo: "hexpm", optional: false]}], "hexpm"},
   "uuid": {:hex, :uuid, "1.1.8", "e22fc04499de0de3ed1116b770c7737779f226ceefa0badb3592e64d5cfb4eb9", [], [], "hexpm"},
 }

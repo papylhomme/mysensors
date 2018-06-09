@@ -21,7 +21,7 @@ defmodule MySensors.SerialBridge do
         }
   """
 
-  use GenServer, start: {__MODULE__, :start_link, []}
+  use GenServer, start: {__MODULE__, :start_link, [:uuid, :config]}
   require Logger
 
   # retry timeout for UART connection
@@ -34,9 +34,9 @@ defmodule MySensors.SerialBridge do
   @doc """
   Start the server
   """
-  @spec start_link :: GenServer.on_start()
-  def start_link do
-    GenServer.start_link(__MODULE__, nil, name: __MODULE__)
+  @spec start_link(String.t(), map) :: GenServer.on_start()
+  def start_link(network_uuid, config) do
+    GenServer.start_link(__MODULE__, {network_uuid, config}, name: __MODULE__)
   end
 
   ###############
@@ -44,19 +44,18 @@ defmodule MySensors.SerialBridge do
   ###############
 
   # Initialize the serial connection at server startup
-  def init(nil) do
-    config = Application.get_env(:mysensors, :serial_bridge)
-    if is_nil(config), do: raise("Missing configuration key :serial_bridge")
-
+  def init({network_uuid, config}) do
     device = config.device
     speed = config.speed
 
     Logger.info("Starting serial bridge on #{device}")
-    TransportBus.subscribe_outgoing()
+    TransportBus.subscribe_outgoing(network_uuid)
+
+    initial_state = %{device: device, speed: speed, network_uuid: network_uuid}
 
     case _try_connect(device, speed) do
-      :ok -> {:ok, %{device: device, speed: speed, status: :connected}}
-      _ -> {:ok, %{device: device, speed: speed, status: :disconnected}, @retry_timeout}
+      :ok -> {:ok, %{initial_state | status: :connected}}
+      _ -> {:ok, %{initial_state | status: :disconnected}, @retry_timeout}
     end
   end
 
@@ -85,7 +84,7 @@ defmodule MySensors.SerialBridge do
       {:nerves_uart, ^device, str} ->
         str
         |> Message.parse()
-        |> TransportBus.broadcast_incoming()
+        |> TransportBus.broadcast_incoming(state.network_uuid)
 
       # unknown message
       _ ->

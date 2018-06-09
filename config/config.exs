@@ -18,7 +18,7 @@ use Mix.Config
 #
 # You can also configure a 3rd-party app:
 #
-config :logger, level: :info
+config :logger, level: :debug
 
 #
 
@@ -30,11 +30,12 @@ config :logger, level: :info
 #
 #     import_config "#{Mix.env}.exs"
 
-
 config :mysensors,
-  gateway: true,
-  measure: :metric,
-  serial_bridge: %{
-    device: "ttyUSB0",
-    speed: 115200
-  }
+#  transport_bus_name: MySensors.PubSub,
+  measure: :metric
+#  mqtt_bridge: %{
+#  }
+# serial_bridge: %{
+#  device: "ttyUSB0",
+#  speed: 115_200
+# }

@@ -23,9 +23,10 @@ defmodule MySensors.Mixfile do
   defp deps do
     [
       {:ex_doc, "~> 0.16", only: :dev, runtime: false},
-      {:nerves_uart, "~> 1.2"}, # required by SerialBridge
       {:phoenix_pubsub, "~> 1.0"},
-      {:tortoise, "~> 0.1.0"}
+      {:uuid, "~> 1.1"},
+      {:nerves_uart, "~> 1.2"}, # required by SerialBridge
+      {:tortoise, "~> 0.2"}
     ]
   end
 end

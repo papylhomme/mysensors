@@ -1,6 +1,5 @@
 defmodule MySensors.Bus do
   alias Phoenix.PubSub
-  alias MySensors.Types
   alias MySensors.Message
 
   use MySensors.PubSub
@@ -23,26 +22,26 @@ defmodule MySensors.Bus do
 
   Subscribers will receive node messages as `{:mysensors, :message, message}` tuples.
   """
-  @spec subscribe_node_messages(Types.id()) :: :ok | {:error, term}
-  def subscribe_node_messages(node_id) do
-    PubSub.subscribe(@bridge_name, _node_topic(node_id))
+  @spec subscribe_node_messages(String.t()) :: :ok | {:error, term}
+  def subscribe_node_messages(node) do
+    PubSub.subscribe(@bridge_name, _node_topic(node))
   end
 
   @doc """
   Unsubscribe the caller from the `node`'s topic
   """
-  @spec unsubscribe_node_messages(Types.id()) :: :ok | {:error, term}
-  def unsubscribe_node_messages(node_id) do
-    PubSub.unsubscribe(@bridge_name, _node_topic(node_id))
+  @spec unsubscribe_node_messages(String.t()) :: :ok | {:error, term}
+  def unsubscribe_node_messages(node) do
+    PubSub.unsubscribe(@bridge_name, _node_topic(node))
   end
 
 
   @doc """
   Broadcast a node message
   """
-  @spec broadcast_node_messages(Message.t()) :: :ok | {:error, term}
-  def broadcast_node_messages(message = %{node_id: node_id}) do
-    PubSub.broadcast(@bridge_name, _node_topic(node_id), {:mysensors, :node_messages, message})
+  @spec broadcast_node_messages(String.t(), Message.t()) :: :ok | {:error, term}
+  def broadcast_node_messages(node, message) do
+    PubSub.broadcast(@bridge_name, _node_topic(node), {:mysensors, :node_messages, message})
   end
 
 

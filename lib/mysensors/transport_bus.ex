@@ -8,8 +8,8 @@ defmodule MySensors.TransportBus do
   @bridge_name Application.get_env(:mysensors, :transport_bus_name, __MODULE__)
 
 
-  topic_helpers(@bridge_name, :incoming)
-  topic_helpers(@bridge_name, :outgoing)
+  topic_helpers(@bridge_name, :incoming, fn transport_uuid -> "incoming#{transport_uuid}" end)
+  topic_helpers(@bridge_name, :outgoing, fn transport_uuid -> "outgoing#{transport_uuid}" end)
 
 
 

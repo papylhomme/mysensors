@@ -9,7 +9,8 @@ defmodule MySensors.Node do
   A server to interract with a MySensors node
   """
 
-  defstruct node_id: nil,
+  defstruct uuid: nil,
+            node_id: nil,
             type: nil,
             version: nil,
             sketch_name: nil,
@@ -24,6 +25,7 @@ defmodule MySensors.Node do
 
   @typedoc "Node's info"
   @type t :: %__MODULE__{
+          uuid: String.t(),
           node_id: Types.id(),
           type: String.t(),
           version: String.t(),
@@ -40,21 +42,13 @@ defmodule MySensors.Node do
   #########
 
   @doc """
-  Helper generating an unique reference for the given node
-  """
-  @spec ref(Types.id()) :: atom
-  def ref(node_id) do
-    "#{__MODULE__}#{node_id}" |> String.to_atom()
-  end
-
-  @doc """
-  Start a node using the given id
+  Start a node using the given uuid
 
   On startup the node is loaded from storage
   """
-  @spec start_link({any, Types.id()}) :: GenServer.on_start()
-  def start_link({table, node_id}) do
-    GenServer.start_link(__MODULE__, {table, node_id}, name: ref(node_id))
+  @spec start_link({String.t(), any, String.t()}) :: GenServer.on_start()
+  def start_link({network_uuid, table, uuid}) do
+    GenServer.start_link(__MODULE__, {network_uuid, table, uuid}, name: MySensors.by_uuid(uuid))
   end
 
   @doc """
@@ -102,20 +96,21 @@ defmodule MySensors.Node do
   ###############
 
   # Initialize the server
-  def init({table, node_id}) do
-    Bus.subscribe_node_messages(node_id)
+  def init({network_uuid, table, uuid}) do
+    Bus.subscribe_node_messages(uuid)
 
     # init message queue
-    {:ok, queue} = MessageQueue.start_link(fn event ->
-      Bus.broadcast_node_commands(node_id, event)
+    {:ok, queue} = MessageQueue.start_link(network_uuid, fn event ->
+      Bus.broadcast_node_commands(uuid, event)
     end)
 
     # init sensors
-    [{_id, node_specs}] = :dets.lookup(table, node_id)
+    [{_, node_specs}] = :dets.lookup(table, uuid)
     sensors =
-      for {id, sensor_specs} <- node_specs.sensors, into: %{} do
-        {:ok, pid} = Sensor.start_link(node_specs.node_id, sensor_specs)
-        {id, pid}
+      for {sensor_id, sensor_specs} <- node_specs.sensors, into: %{} do
+        sensor_uuid = _sensor_uuid(uuid, sensor_id)
+        {:ok, pid} = Sensor.start_link(sensor_uuid, uuid, sensor_specs)
+        {sensor_uuid, {pid, sensor_specs}}
       end
 
     Logger.info("New node #{node_specs.node_id} online (#{inspect(node_specs.sensors)})")
@@ -124,12 +119,13 @@ defmodule MySensors.Node do
      %{
        message_queue: queue,
        node: %__MODULE__{
-         node_id: node_specs.node_id,
-         type: node_specs.type,
-         version: node_specs.version,
-         sketch_name: node_specs.sketch_name,
-         sketch_version: node_specs.sketch_version,
-         sensors: sensors
+        uuid: uuid,
+        node_id: node_specs.node_id,
+        type: node_specs.type,
+        version: node_specs.version,
+        sketch_name: node_specs.sketch_name,
+        sketch_version: node_specs.sketch_version,
+        sensors: sensors
        }
      }}
   end
@@ -148,8 +144,8 @@ defmodule MySensors.Node do
   def handle_call(:list_sensors, _from, state) do
     res =
       state.node.sensors
-      |> Enum.map(fn {_id, pid} ->
-        Sensor.info(pid)
+      |> Enum.map(fn {_uuid, {pid, _spec}} ->
+        {pid, Sensor.info(pid)}
       end)
 
     {:reply, res, state}
@@ -232,10 +228,10 @@ defmodule MySensors.Node do
         {:mysensors, :node_messages, message = %{child_sensor_id: sensor_id}},
         state = %{node: node}
       ) do
-    if Map.has_key?(node.sensors, sensor_id) do
-      Sensor.on_event(node.sensors[sensor_id], message)
-    else
-      Logger.warn("Node #{node.node_id} doesn't know sensor #{sensor_id} from message #{message}")
+
+    case Map.get(node.sensors, _sensor_uuid(node.uuid, sensor_id)) do
+      {pid, _spec} -> Sensor.on_event(pid, message)
+      _ -> Logger.warn("Node #{node.uuid} doesn't know sensor #{sensor_id} from message #{message}")
     end
 
     {:noreply, state}
@@ -247,27 +243,30 @@ defmodule MySensors.Node do
     {:noreply, state}
   end
 
+  # Generate an UUID for the given sensor
+  defp _sensor_uuid(node_uuid, sensor_id) do
+    UUID.uuid5(node_uuid, "#{sensor_id}")
+  end
+
+
+
   defmodule NodeDiscoveredEvent do
     @moduledoc """
     An event generated when a new node is discovered
     """
 
     # Event struct
-    defstruct node_id: nil, specs: nil
+    defstruct uuid: nil, specs: nil
 
     @typedoc "The event struct"
-    @type t :: %__MODULE__{node_id: Types.id(), specs: MySensors.Node.t()}
+    @type t :: %__MODULE__{uuid: String.t(), specs: MySensors.Node.t()}
 
     @doc """
-    Create a NodeDiscoveredEvent
+    Create and broadcast a NodeDiscoveredEvent
     """
-    @spec new(MySensors.Node.t()) :: t
-    def new(specs) do
-      %__MODULE__{node_id: specs.node_id, specs: specs}
-    end
-
+    @spec broadcast(MySensors.Node.t()) :: t
     def broadcast(specs) do
-      new(specs)
+      %__MODULE__{uuid: specs.uuid, specs: specs}
       |> Bus.broadcast_nodes_events()
     end
   end
@@ -278,21 +277,17 @@ defmodule MySensors.Node do
     """
 
     # Event struct
-    defstruct node_id: nil, specs: nil
+    defstruct uuid: nil, specs: nil
 
     @typedoc "The event struct"
-    @type t :: %__MODULE__{node_id: Types.id(), specs: MySensors.Node.t()}
+    @type t :: %__MODULE__{uuid: String.t(), specs: MySensors.Node.t()}
 
     @doc """
-    Create a NodeUpdatedEvent
+    Create and broadcast a NodeUpdatedEvent
     """
-    @spec new(MySensors.Node.t()) :: t
-    def new(specs) do
-      %__MODULE__{node_id: specs.node_id, specs: specs}
-    end
-
+    @spec broadcast(MySensors.Node.t()) :: t
     def broadcast(specs) do
-      new(specs)
+      %__MODULE__{uuid: specs.uuid, specs: specs}
       |> Bus.broadcast_nodes_events()
     end
   end
