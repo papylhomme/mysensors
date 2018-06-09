@@ -47,21 +47,25 @@ defmodule MySensors.SerialBridge do
   def init({network_uuid, config}) do
     device = config.device
     speed = config.speed
-
     Logger.info("Starting serial bridge on #{device}")
+
+    # Init UART system
+    {:ok, uart} = Nerves.UART.start_link
+
+    # Subscribe to transport
     TransportBus.subscribe_outgoing(network_uuid)
 
-    initial_state = %{device: device, speed: speed, network_uuid: network_uuid}
-
-    case _try_connect(device, speed) do
+    # Init state and try to connect
+    initial_state = %{uart: uart, device: device, speed: speed, network_uuid: network_uuid}
+    case _try_connect(initial_state) do
       :ok -> {:ok, %{initial_state | status: :connected}}
       _ -> {:ok, %{initial_state | status: :disconnected}, @retry_timeout}
     end
   end
 
   # Handle timeout to reconnect the UART
-  def handle_info(:timeout, state = %{status: :disconnected, device: device, speed: speed}) do
-    case _try_connect(device, speed) do
+  def handle_info(:timeout, state = %{status: :disconnected}) do
+    case _try_connect(state) do
       :ok -> {:noreply, %{state | status: :connected}}
       _ -> {:noreply, state, @retry_timeout}
     end
@@ -96,7 +100,7 @@ defmodule MySensors.SerialBridge do
 
   # Handle outgoing messages
   def handle_info({:mysensors, :outgoing, message}, state) do
-    Nerves.UART.write(Nerves.UART, "#{Message.serialize(message)}\n")
+    Nerves.UART.write(state.uart, "#{Message.serialize(message)}\n")
     {:noreply, state}
   end
 
@@ -107,7 +111,7 @@ defmodule MySensors.SerialBridge do
   end
 
   # Try to connect to the serial gateway
-  defp _try_connect(device, speed) do
+  defp _try_connect(%{uart: uart, device: device, speed: speed}) do
     case Map.has_key?(Nerves.UART.enumerate(), device) do
       false ->
         Logger.debug("Serial device #{device} not present, will retry later")
@@ -115,7 +119,7 @@ defmodule MySensors.SerialBridge do
 
       true ->
         case Nerves.UART.open(
-               Nerves.UART,
+               uart,
                device,
                speed: speed,
                active: true,
