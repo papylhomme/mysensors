@@ -17,9 +17,13 @@ defmodule MySensors.Network do
   # Default timeout when waiting for a reply from the network
   @ack_timeout 1000
 
-
-
-  #TODO multi add a pid param to the api
+  defstruct id: nil,
+      uuid: nil,
+      supervisor: nil,
+      table: nil,
+      presentations: %{},
+      queue: nil,
+      transport_uuid: nil
 
   #########
   #  API
@@ -179,7 +183,7 @@ defmodule MySensors.Network do
 
 
     # Init transport and state
-    initial_state = %{
+    initial_state = %__MODULE__{
       id: config.id,
       uuid: config.uuid,
       supervisor: supervisor,
