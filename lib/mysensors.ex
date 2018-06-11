@@ -62,12 +62,11 @@ defmodule MySensors do
   def start_network(id, transport) do
     Logger.info "Starting network #{id}"
 
-    {:ok, _pid} = 
-      @supervisor_networks
-      |> DynamicSupervisor.start_child(%{
-        id: id,
-        start: {MySensors.Network, :start_link, [%{id: id, uuid: UUID.uuid5(:nil, "#{id}"), transport: transport}]}
-      })
+    @supervisor_networks
+    |> DynamicSupervisor.start_child(%{
+      id: id,
+      start: {MySensors.Network, :start_link, [%{id: id, uuid: UUID.uuid5(:nil, "#{id}"), transport: transport}]}
+    })
   end
 
 

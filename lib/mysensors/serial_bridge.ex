@@ -39,6 +39,16 @@ defmodule MySensors.SerialBridge do
     GenServer.start_link(__MODULE__, {network_uuid, config}, name: __MODULE__)
   end
 
+
+  @doc """
+  Retrieve the UUID used by for the transport topic
+  """
+  @spec transport_uuid(String.t(), map, pid) :: String.t()
+  def transport_uuid(network_uuid, _config, _server) do
+    network_uuid
+  end
+
+
   ###############
   #  Internals
   ###############

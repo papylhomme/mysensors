@@ -193,14 +193,13 @@ defmodule MySensors.Network do
       transport_uuid: nil
     }
 
-    state = 
+    state =
       case config.transport do
-        {:remote, node, transport_uuid} ->
-          Elixir.Node.ping node
-          %{initial_state | transport_uuid: transport_uuid}
         {module, transport_config} ->
-          apply(module, :start_link, [config.uuid, transport_config])
-          %{initial_state | transport_uuid: config.uuid}
+          {:ok, pid} = apply(module, :start_link, [config.uuid, transport_config])
+          transport_uuid = apply(module, :transport_uuid, [config.uuid, transport_config, pid])
+          %{initial_state | transport_uuid: transport_uuid}
+        _ -> raise "Unknown transport config: #{inspect config.transport}"
       end
 
     # Init nodes
