@@ -35,7 +35,7 @@ defmodule MySensors.Sensor do
   #########
   #  API
   #########
-  
+
 
   @doc """
   Start the server

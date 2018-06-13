@@ -14,7 +14,7 @@ defmodule MySensors.Bus do
   topic_helpers(@bridge_name, :gateway_logs)
   topic_helpers(@bridge_name, :sensors_events)
   topic_helpers(@bridge_name, :nodes_events)
-  topic_helpers(@bridge_name, :node_commands, fn node_id -> "node_#{node_id}_commands" end)
+  topic_helpers(@bridge_name, :node_commands, fn uuid -> "node_#{uuid}_commands" end)
 
 
   @doc """
