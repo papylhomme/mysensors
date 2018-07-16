@@ -324,10 +324,8 @@ defmodule MySensors.Network do
          msg = %{command: :presentation, child_sensor_id: 255, node_id: node_id}},
         state
       ) do
-    acc = get_in(state, [:presentations, node_id])
-
     presentations =
-      case acc do
+      case state.presentations[node_id] do
         nil ->
           Logger.info("Receiving presentation from node #{node_id}...")
           p = _init_accumulator(state.presentations, node_id)
@@ -344,7 +342,7 @@ defmodule MySensors.Network do
 
   # Forward presentation messages to accumulator
   def handle_info({:mysensors, :incoming, msg = %{command: :presentation, node_id: node_id}}, state) do
-    acc = get_in(state, [:presentations, node_id])
+    acc = state.presentations[node_id]
     unless is_nil(acc), do: send(acc, msg)
     {:noreply, state}
   end
@@ -356,7 +354,7 @@ defmodule MySensors.Network do
         state
       )
       when t in [I_SKETCH_NAME, I_SKETCH_VERSION] do
-    acc = get_in(state, [:presentations, node_id])
+    acc = state.presentations[node_id]
     unless is_nil(acc), do: send(acc, msg)
     {:noreply, state}
   end
