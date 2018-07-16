@@ -291,7 +291,7 @@ defmodule MySensors.Network do
   def handle_info({:mysensors, :incoming, msg = %{command: :internal, type: I_TIME}}, state) do
     Logger.debug("Received time request: #{msg}")
 
-    send_message(
+    _send_message(state,
       msg.node_id,
       msg.child_sensor_id,
       :internal,
@@ -313,7 +313,7 @@ defmodule MySensors.Network do
         _ -> ""
       end
 
-    send_message(msg.node_id, msg.child_sensor_id, :internal, I_CONFIG, payload)
+    _send_message(state, msg.node_id, msg.child_sensor_id, :internal, I_CONFIG, payload)
     {:noreply, state}
   end
 
@@ -440,6 +440,10 @@ defmodule MySensors.Network do
   defp _send_message(state, message) do
     Logger.debug(fn -> "Sending message #{message}" end)
     TransportBus.broadcast_outgoing(state.transport_uuid, message)
+  end
+
+  defp _send_message(state, node, sensor, command, type, payload \\ "") do
+    _send_message(state, Message.new(node, sensor, command, type, payload))
   end
 
   # Request presentation for the given node
