@@ -372,7 +372,7 @@ defmodule MySensors.Network do
 
     # Handle node awakening to flush related presentation requests
     if msg.type == I_POST_SLEEP_NOTIFICATION do
-      MessageQueue.flush(state.queue, fn msg -> msg.node_id == node_id end)
+      MessageQueue.flush(state.queue, fn i -> i.message.node_id == node_id end)
     end
 
     # Request presentation if node is unknown
@@ -398,8 +398,7 @@ defmodule MySensors.Network do
         _node_presentation(state, acc)
     end
 
-    {_, new_state} = pop_in(state, [:presentations, acc.node_id])
-    {:noreply, new_state}
+    {:noreply, %{state | presentations: Map.delete(state.presentations, acc.node_id)}}
   end
 
 
@@ -423,7 +422,7 @@ defmodule MySensors.Network do
   defp _init_accumulator(presentations, node, type \\ nil, version \\ nil) do
     {:ok, pid} = PresentationAccumulator.start_link(node, type, version)
     Process.monitor(pid)
-    put_in(presentations, [node], pid)
+    Map.put(presentations, node, pid)
   end
 
   # Test if an accumulator has received sufficient information
