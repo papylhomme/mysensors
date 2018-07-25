@@ -10,6 +10,7 @@ defmodule MySensors.Node do
   """
 
   defstruct uuid: nil,
+            network: nil,
             node_id: nil,
             type: nil,
             version: nil,
@@ -26,6 +27,7 @@ defmodule MySensors.Node do
   @typedoc "Node's info"
   @type t :: %__MODULE__{
           uuid: String.t(),
+          network: String.t(),
           node_id: Types.id(),
           type: String.t(),
           version: String.t(),
@@ -120,6 +122,7 @@ defmodule MySensors.Node do
        message_queue: queue,
        node: %__MODULE__{
         uuid: uuid,
+        network: network_uuid,
         node_id: node_specs.node_id,
         type: node_specs.type,
         version: node_specs.version,
