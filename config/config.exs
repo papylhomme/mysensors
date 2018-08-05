@@ -31,11 +31,8 @@ config :logger, level: :debug
 #     import_config "#{Mix.env}.exs"
 
 config :mysensors,
-#  transport_bus_name: MySensors.PubSub,
-  measure: :metric
-#  mqtt_bridge: %{
-#  }
-# serial_bridge: %{
-#  device: "ttyUSB0",
-#  speed: 115_200
-# }
+  measure: :metric,
+  networks: %{
+    mqtt_bridge: {MySensors.MQTTBridge, %{}},
+    remote_network: {MySensors.RemoteBridge, %{node: :"habbot@habbot.home", transport: ""}}
+  }

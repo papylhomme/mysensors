@@ -6,12 +6,10 @@ defmodule MySensors do
   use Application
   require Logger
 
+  alias MySensors.NetworksManager
+
   # Name of the registry mapping UUIDs to processes
   @registry_name MySensors.Registry
-
-
-  # Name of the network supervisor
-  @supervisor_networks MySensors.NetworksSupervisor
 
 
   @doc """
@@ -31,17 +29,13 @@ defmodule MySensors do
       {Registry, keys: :unique, name: @registry_name},
       MySensors.Bus,
       MySensors.TransportBus,
-      {DynamicSupervisor, strategy: :one_for_one, name: @supervisor_networks}
+      MySensors.NetworksManager
     ]
 
     # Init main supervisor
-    opts = [strategy: :one_for_one, name: MySensors.Supervisor]
-    {:ok, sup} = Supervisor.start_link(children, opts)
-
-    # Init networks
+    res = Supervisor.start_link(children, [strategy: :one_for_one, name: MySensors.Supervisor])
     _init_networks()
-
-    {:ok, sup}
+    res
   end
 
 
@@ -50,9 +44,7 @@ defmodule MySensors do
   """
   @spec networks() :: []
   def networks do
-    @supervisor_networks
-    |> DynamicSupervisor.which_children
-    |> Enum.map(fn {_, pid, _, _} -> MySensors.Network.info(pid) end)
+    NetworksManager.networks
   end
 
 
@@ -60,13 +52,7 @@ defmodule MySensors do
   Start a new network
   """
   def start_network(id, transport) do
-    Logger.info "Starting network #{id}"
-
-    @supervisor_networks
-    |> DynamicSupervisor.start_child(%{
-      id: id,
-      start: {MySensors.Network, :start_link, [%{id: id, uuid: UUID.uuid5(:nil, "#{id}"), transport: transport}]}
-    })
+    NetworksManager.start_network(id, transport)
   end
 
 
@@ -74,22 +60,15 @@ defmodule MySensors do
   Stop a network
   """
   def stop_network(uuid) do
-    child =
-      @supervisor_networks
-      |> DynamicSupervisor.which_children
-      |> Enum.find(fn {_, pid, _, _} -> uuid == MySensors.Network.info(pid).uuid end)
-
-    case child do
-      {_, pid, _, _} -> DynamicSupervisor.terminate_child(@supervisor_networks, pid)
-      _ -> nil
-    end
+    NetworksManager.stop_network(uuid)
   end
 
 
   # Read config and start networks accordingly
   defp _init_networks do
+    IO.inspect Application.get_env(:mysensors, :networks, %{})
     Application.get_env(:mysensors, :networks, %{})
-    |> Enum.each(fn {id, config} -> start_network(id, config) end)
+    |> Enum.each(fn {id, config} -> NetworksManager.start_network(id, config) end)
   end
 
 end
