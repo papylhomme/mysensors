@@ -33,9 +33,7 @@ defmodule MySensors do
     ]
 
     # Init main supervisor
-    res = Supervisor.start_link(children, [strategy: :one_for_one, name: MySensors.Supervisor])
-    _init_networks()
-    res
+    Supervisor.start_link(children, [strategy: :one_for_one, name: MySensors.Supervisor])
   end
 
 
@@ -51,8 +49,8 @@ defmodule MySensors do
   @doc """
   Start a new network
   """
-  def start_network(id, transport) do
-    NetworksManager.start_network(id, transport)
+  def start_network(uuid) do
+    NetworksManager.start_network(uuid)
   end
 
 
@@ -61,14 +59,6 @@ defmodule MySensors do
   """
   def stop_network(uuid) do
     NetworksManager.stop_network(uuid)
-  end
-
-
-  # Read config and start networks accordingly
-  defp _init_networks do
-    IO.inspect Application.get_env(:mysensors, :networks, %{})
-    Application.get_env(:mysensors, :networks, %{})
-    |> Enum.each(fn {id, config} -> NetworksManager.start_network(id, config) end)
   end
 
 end

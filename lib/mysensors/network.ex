@@ -17,7 +17,7 @@ defmodule MySensors.Network do
   # Default timeout when waiting for a reply from the network
   @ack_timeout 1000
 
-  defstruct id: nil,
+  defstruct name: nil,
       uuid: nil,
       supervisor: nil,
       table: nil,
@@ -184,7 +184,7 @@ defmodule MySensors.Network do
 
     # Init transport and state
     initial_state = %__MODULE__{
-      id: config.id,
+      name: config.name,
       uuid: config.uuid,
       supervisor: supervisor,
       table: tid,
