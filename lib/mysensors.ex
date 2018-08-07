@@ -12,10 +12,14 @@ defmodule MySensors do
   @registry_name MySensors.Registry
 
 
+  @typedoc "UUIDv5 identifier"
+  @type uuid :: String.t
+
+
   @doc """
   Setup a GenServer `:via` tuple using the given uuid
   """
-  @spec by_uuid(String.t()) :: GenServer.server()
+  @spec by_uuid(uuid) :: GenServer.server()
   def by_uuid(uuid) do
     {:via, Registry, {@registry_name, uuid}}
   end

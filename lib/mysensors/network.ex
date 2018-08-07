@@ -10,7 +10,7 @@ defmodule MySensors.Network do
   @moduledoc """
   A server to interract with a MySensors network
   """
-  use GenServer
+  use GenServer, start: {__MODULE__, :start_link, [:uuid, :config]}
   require Logger
 
 
@@ -25,6 +25,23 @@ defmodule MySensors.Network do
       queue: nil,
       transport_uuid: nil
 
+
+  @typedoc "Network configuration"
+  @type config :: %{name: atom, transport: term()}
+
+  @typedoc "Network information"
+  @type t :: %__MODULE__{
+    name: String.t(),
+    uuid: MySensors.uuid(),
+    supervisor: pid(),
+    table: reference(),
+    presentations: map(),
+    queue: pid(),
+    transport_uuid: MySensors.uuid()
+  }
+
+
+
   #########
   #  API
   #########
@@ -32,9 +49,9 @@ defmodule MySensors.Network do
   @doc """
   Start the server
   """
-  @spec start_link(map) :: GenServer.on_start()
-  def start_link(config) do
-    GenServer.start_link(__MODULE__, {config}, name: MySensors.by_uuid(config.uuid))
+  @spec start_link(MySensors.uuid, Network.config) :: GenServer.on_start()
+  def start_link(uuid, config) do
+    GenServer.start_link(__MODULE__, {uuid, config}, name: MySensors.by_uuid(uuid))
   end
 
 
@@ -172,20 +189,20 @@ defmodule MySensors.Network do
   ####################
 
   # Initialize the server
-  def init({config}) do
+  def init({uuid, config}) do
     # Open database
-    nodes_db = Path.join(Application.get_env(:mysensors, :data_dir, "./"), "network_#{config.uuid}.db")
+    nodes_db = Path.join(Application.get_env(:mysensors, :data_dir, "./"), "network_#{uuid}.db")
     {:ok, tid} = :dets.open_file(nodes_db, ram_file: true, auto_save: 10)
 
     # Start direct children
-    {:ok, queue} = MessageQueue.start_link(config.uuid)
+    {:ok, queue} = MessageQueue.start_link(uuid)
     {:ok, supervisor} = Supervisor.start_link([], strategy: :one_for_one)
 
 
     # Init transport and state
     initial_state = %__MODULE__{
       name: config.name,
-      uuid: config.uuid,
+      uuid: uuid,
       supervisor: supervisor,
       table: tid,
       presentations: %{},
@@ -196,8 +213,8 @@ defmodule MySensors.Network do
     state =
       case config.transport do
         {module, transport_config} ->
-          {:ok, pid} = apply(module, :start_link, [config.uuid, transport_config])
-          transport_uuid = apply(module, :transport_uuid, [config.uuid, transport_config, pid])
+          {:ok, pid} = apply(module, :start_link, [uuid, transport_config])
+          transport_uuid = apply(module, :transport_uuid, [uuid, transport_config, pid])
           %{initial_state | transport_uuid: transport_uuid}
         _ -> raise "Unknown transport config: #{inspect config.transport}"
       end
