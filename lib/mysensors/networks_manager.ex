@@ -1,5 +1,6 @@
 defmodule MySensors.NetworksManager do
   alias MySensors.Network
+  alias MySensors.Events
 
   @moduledoc """
   A manager for networks
@@ -8,8 +9,6 @@ defmodule MySensors.NetworksManager do
   use GenServer, start: {__MODULE__, :start_link, []}
   require Logger
 
-
-  # TODO save network errors and use them to enhance the results of `networks` call
 
   #########
   #  API
@@ -27,7 +26,7 @@ defmodule MySensors.NetworksManager do
   @doc """
   Get a list of registered networks with their state and configuration
   """
-  @spec networks() :: %{optional(MySensors.uuid) => %{status: :running | :stopped, config: Network.config, info: Network.info}}
+  @spec networks() :: %{optional(MySensors.uuid) => %{status: Network.status, config: Network.config}}
   def networks() do
     GenServer.call(__MODULE__, :networks)
   end
@@ -75,37 +74,31 @@ defmodule MySensors.NetworksManager do
 
   # Initialize the server
   def init({}) do
-    # Init supervisor and table, create state
-    {:ok, supervisor} = DynamicSupervisor.start_link(strategy: :one_for_one)
+    # Trap exits for networks processes
+    Process.flag(:trap_exit, true)
 
+    # Init table, create state
     networks_db = Path.join(Application.get_env(:mysensors, :data_dir, "./"), "networks.db")
     {:ok, tid} = :dets.open_file(networks_db, ram_file: true, auto_save: 10)
 
-    state = %{supervisor: supervisor, table: tid}
+    state = %{processes: %{}, table: tid}
 
     # Look for networks in configuration file and register them
     Application.get_env(:mysensors, :networks, [])
     |> Enum.each(fn network -> _register_network(state, network) end)
 
     # Auto start networks
-    _autostart_networks(state)
-
-    {:ok, state}
+    {:ok, _autostart_networks(state)}
   end
 
 
   # Handle call networks
   def handle_call(:networks, _from, state) do
-    runnings =
-      for {_, pid, _, _} <- DynamicSupervisor.which_children(state.supervisor), into: %{} do
-        info = Network.info(pid)
-        {info.uuid, info}
-      end
-
     res = :dets.foldl(fn {uuid, config}, acc ->
-      case Map.get(runnings, uuid) do
+      case Map.get(state.processes, uuid) do
         nil -> put_in(acc, [uuid], %{status: :stopped, config: config})
-        info -> put_in(acc, [uuid], %{status: :running, config: config, info: info})
+        {:running, pid} -> put_in(acc, [uuid], %{status: {:running, Network.info(pid)}, config: config})
+        {:error, error} -> put_in(acc, [uuid], %{status: {:error, error}, config: config})
       end
     end, %{}, state.table)
 
@@ -128,8 +121,10 @@ defmodule MySensors.NetworksManager do
   # Handle call start_network
   def handle_call({:start_network, uuid}, _from, state) do
     case :dets.lookup(state.table, uuid) do
-      [] -> {:reply, :not_found, state}
-      [{uuid, network}] -> {:reply, _start_network(state, uuid, network), state}
+      [] -> {:reply, :not_registered, state}
+      [{uuid, network}] ->
+        {res, processes} =  _start_network(state, uuid, network)
+        {:reply, res, %{state | processes: processes}}
     end
   end
 
@@ -140,16 +135,31 @@ defmodule MySensors.NetworksManager do
   end
 
 
+  # Handle network process shutdown
+  def handle_info({:EXIT, from, reason}, state) do
+    case Enum.find(state.processes, fn {_uuid, {status, pid}} -> status == :running and pid == from end) do
+      {uuid, _} ->
+        Logger.info("Network #{uuid} stopped: #{inspect reason}")
+        Events.NetworkStatusChanged.broadcast(uuid, :stopped)
+        {:noreply, %{state | processes: Map.delete(state.processes, uuid)}}
+
+      _ ->
+        {:noreply, state}
+    end
+
+  end
+
+
   ############
   #  Private
   ############
 
   # Auto-starts configured networks
   def _autostart_networks(state) do
-    :dets.traverse(state.table, fn {uuid, network} ->
-      _start_network(state, uuid, network)
-      :continue
-    end)
+    :dets.foldl(fn {uuid, config}, acc ->
+      {_res, processes} = _start_network(acc, uuid, config)
+      %{acc | processes: processes}
+    end, state, state.table)
   end
 
 
@@ -160,16 +170,22 @@ defmodule MySensors.NetworksManager do
     case :dets.lookup(state.table, uuid) do
       [_] -> nil
       [] ->
-        Logger.info "Registering network #{network.name} #{inspect network}"
         :ok = :dets.insert(state.table, {uuid, network})
+        Logger.info "New network #{network.name} registered"
+        Events.NetworkRegistered.broadcast(uuid, network)
         uuid
     end
   end
 
 
-  # Register a network
+  # Unregister a network
   def _unregister_network(state, uuid) do
-    :dets.delete(state.table, uuid)
+    case :dets.lookup(state.table, uuid) do
+      [] -> :not_registered
+      [_] ->
+        :dets.delete(state.table, uuid)
+        Events.NetworkUnregistered.broadcast(uuid)
+    end
   end
 
 
@@ -177,24 +193,32 @@ defmodule MySensors.NetworksManager do
   def _start_network(state, uuid, network) do
     Logger.info "Starting network #{network.name}"
 
-    DynamicSupervisor.start_child(state.supervisor, %{
-      id: String.to_atom(uuid),
-      start: {Network, :start_link, [uuid, network]}
-    })
+    res = Network.start_link(uuid, network)
+
+    processes =
+      case res do
+        {:ok, pid} ->
+          Events.NetworkStatusChanged.broadcast(uuid, {:running, Network.info(pid)})
+          Map.put(state.processes, uuid, {:running, pid})
+
+        {:error, {:already_started, _pid}} ->
+          state.processes # nothing to do
+
+        _ ->
+          Logger.warn("Error starting network #{network.name}: #{inspect res}")
+          Events.NetworkStatusChanged.broadcast(uuid, {:error, res})
+          Map.put(state.processes, uuid, {:error, inspect res})
+      end
+
+    {res, processes}
   end
 
 
   # Stop a network
   defp _stop_network(state, uuid) do
-    # TODO try to prevent call Network.info (cache the info maybe)
-    child =
-      state.supervisor
-      |> DynamicSupervisor.which_children
-      |> Enum.find(fn {_, pid, _, _} -> uuid == Network.info(pid).uuid end)
-
-    case child do
-      {_, pid, _, _} -> DynamicSupervisor.terminate_child(state.supervisor, pid)
-      _ -> :not_found
+    case Map.get(state.processes, uuid) do
+      {:running, pid} -> Process.exit(pid, :kill)
+      _ -> :not_running
     end
   end
 

@@ -260,7 +260,7 @@ defmodule MySensors.Node do
     defstruct uuid: nil, specs: nil
 
     @typedoc "The event struct"
-    @type t :: %__MODULE__{uuid: String.t(), specs: MySensors.Node.t()}
+    @type t :: %__MODULE__{uuid: MySensors.uuid(), specs: MySensors.Node.t()}
 
     @doc """
     Create and broadcast a NodeDiscoveredEvent
@@ -273,15 +273,13 @@ defmodule MySensors.Node do
   end
 
   defmodule NodeUpdatedEvent do
-    @moduledoc """
-    An event generated when a node is updated
-    """
+    @moduledoc "An event generated when a node is updated"
 
     # Event struct
     defstruct uuid: nil, specs: nil
 
     @typedoc "The event struct"
-    @type t :: %__MODULE__{uuid: String.t(), specs: MySensors.Node.t()}
+    @type t :: %__MODULE__{uuid: MySensors.uuid(), specs: MySensors.Node.t()}
 
     @doc """
     Create and broadcast a NodeUpdatedEvent

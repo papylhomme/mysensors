@@ -5,7 +5,12 @@ defmodule MySensors.Bus do
   use MySensors.PubSub
 
   @moduledoc """
-  PubSub implementation for bridge communication
+  PubSub implementation for API communication
+
+  The registered name of the PubSub server can be configured using the `:bus_name` config key:
+
+      config :mysensors,
+        bus_name: CustomBusName
   """
 
   @bridge_name Application.get_env(:mysensors, :bus_name, __MODULE__)
@@ -14,6 +19,7 @@ defmodule MySensors.Bus do
   topic_helpers(@bridge_name, :gateway_logs)
   topic_helpers(@bridge_name, :sensors_events)
   topic_helpers(@bridge_name, :nodes_events)
+  topic_helpers(@bridge_name, :networks_events)
   topic_helpers(@bridge_name, :node_commands, fn uuid -> "node_#{uuid}_commands" end)
 
 

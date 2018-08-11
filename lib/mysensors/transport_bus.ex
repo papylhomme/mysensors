@@ -2,7 +2,12 @@ defmodule MySensors.TransportBus do
   use MySensors.PubSub
 
   @moduledoc """
-  PubSub implementation for bridge communication
+  PubSub implementation for bridges communication
+
+  The registered name of the PubSub server can be configured using the `:transport_bus_name` config key:
+
+      config :mysensors,
+        transport_bus_name: CustomBusName
   """
 
   @bridge_name Application.get_env(:mysensors, :transport_bus_name, __MODULE__)
