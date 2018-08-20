@@ -57,7 +57,7 @@ defmodule MySensors.SerialBridge do
   def init({network_uuid, config}) do
     device = config.device
     speed = config.speed
-    Logger.info("Starting serial bridge on #{device}")
+    Logger.info("Starting serial bridge on #{device} for network #{network_uuid}")
 
     # Init UART system
     {:ok, uart} = Nerves.UART.start_link
@@ -96,9 +96,10 @@ defmodule MySensors.SerialBridge do
 
       # message received
       {:nerves_uart, ^device, str} ->
-        str
-        |> Message.parse()
-        |> TransportBus.broadcast_incoming(state.network_uuid)
+        case Message.parse(str) do
+          {:error, _, _, _} -> Logger.error("Unrecognized MySensors message: #{str}")
+          msg -> TransportBus.broadcast_incoming(state.network_uuid, msg)
+        end
 
       # unknown message
       _ ->
