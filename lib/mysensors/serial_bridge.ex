@@ -66,7 +66,7 @@ defmodule MySensors.SerialBridge do
     TransportBus.subscribe_outgoing(network_uuid)
 
     # Init state and try to connect
-    initial_state = %{uart: uart, device: device, speed: speed, network_uuid: network_uuid}
+    initial_state = %{uart: uart, device: device, speed: speed, network_uuid: network_uuid, status: :disconnected}
     case _try_connect(initial_state) do
       :ok -> {:ok, %{initial_state | status: :connected}}
       _ -> {:ok, %{initial_state | status: :disconnected}, @retry_timeout}
