@@ -7,6 +7,9 @@ defmodule MySensors do
   require Logger
 
   alias MySensors.NetworksManager
+  alias MySensors.Network
+  alias MySensors.Node
+  alias MySensors.Sensor
 
   # Name of the registry mapping UUIDs to processes
   @registry_name MySensors.Registry
@@ -47,6 +50,29 @@ defmodule MySensors do
   @spec networks() :: []
   def networks do
     NetworksManager.networks
+  end
+
+
+  @doc """
+  List the known nodes
+  """
+  def nodes do
+    for {uuid, network} <- networks(), match?({:running, _info}, network.status),
+      node <- Network.nodes(by_uuid(uuid)), into: %{} do
+        {node.uuid, node}
+    end
+  end
+
+
+  @doc """
+  List the known sensors
+  """
+  def sensors do
+    for {uuid, network} <- networks(), match?({:running, _info}, network.status),
+      node <- Network.nodes(by_uuid(uuid)),
+        sensor <- Node.sensors(by_uuid(node.uuid)), into: %{} do
+          {sensor.uuid, sensor}
+    end
   end
 
 

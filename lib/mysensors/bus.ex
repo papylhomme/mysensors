@@ -17,9 +17,9 @@ defmodule MySensors.Bus do
 
 
   topic_helpers(@bridge_name, :gateway_logs)
-  topic_helpers(@bridge_name, :sensors_events)
-  topic_helpers(@bridge_name, :nodes_events)
-  topic_helpers(@bridge_name, :networks_events)
+  topic_helpers(@bridge_name, :sensors_events, fn uuid -> "sensor_#{uuid}_events" end, :sensors_events)
+  topic_helpers(@bridge_name, :nodes_events, fn uuid -> "node_#{uuid}_events" end, :nodes_events)
+  topic_helpers(@bridge_name, :networks_events, fn uuid -> "network_#{uuid}_events" end, :networks_events)
   topic_helpers(@bridge_name, :node_commands, fn uuid -> "node_#{uuid}_commands" end)
 
 

@@ -103,7 +103,7 @@ defmodule MySensors.Node do
 
     # init message queue
     {:ok, queue} = MessageQueue.start_link(network_uuid, fn event ->
-      Bus.broadcast_node_commands(uuid, event)
+      Bus.broadcast_node_commands(event, uuid)
     end)
 
     # init sensors
@@ -268,7 +268,7 @@ defmodule MySensors.Node do
     @spec broadcast(MySensors.Node.t()) :: t
     def broadcast(specs) do
       %__MODULE__{uuid: specs.uuid, specs: specs}
-      |> Bus.broadcast_nodes_events()
+      |> Bus.broadcast_nodes_events(specs.uuid)
     end
   end
 
@@ -287,7 +287,7 @@ defmodule MySensors.Node do
     @spec broadcast(MySensors.Node.t()) :: t
     def broadcast(specs) do
       %__MODULE__{uuid: specs.uuid, specs: specs}
-      |> Bus.broadcast_nodes_events()
+      |> Bus.broadcast_nodes_events(specs.uuid)
     end
   end
 end

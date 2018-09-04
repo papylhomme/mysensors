@@ -18,7 +18,7 @@ defmodule MySensors.Events do
     @spec broadcast(MySensors.uuid, Network.config) :: :ok | {:error, term}
     def broadcast(network, config) do
       %__MODULE__{network: network, config: config}
-      |> Bus.broadcast_networks_events()
+      |> Bus.broadcast_networks_events(network)
     end
   end
 
@@ -36,7 +36,7 @@ defmodule MySensors.Events do
     @spec broadcast(MySensors.uuid) :: :ok | {:error, term}
     def broadcast(network) do
       %__MODULE__{network: network}
-      |> Bus.broadcast_networks_events()
+      |> Bus.broadcast_networks_events(network)
     end
   end
 
@@ -55,7 +55,7 @@ defmodule MySensors.Events do
     @spec broadcast(MySensors.uuid, Network.status) :: :ok | {:error, term}
     def broadcast(network, status) do
       %__MODULE__{network: network, status: status}
-      |> Bus.broadcast_networks_events()
+      |> Bus.broadcast_networks_events(network)
     end
   end
 

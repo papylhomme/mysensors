@@ -9,7 +9,7 @@ defmodule MySensors.PubSub do
   end
 
 
-  def topic_name(topic_name, params) do
+  def topic_name(topic_name, params \\ nil) do
     case topic_name do
       name when is_atom(name) -> name |> Atom.to_string
       f when is_function(f)   -> f.(params)
@@ -87,6 +87,68 @@ defmodule MySensors.PubSub do
 
     end
   end
+
+
+  defmacro topic_helpers(bus, topic, topic_name, global_topic) do
+    quote do
+
+      @doc """
+      Subscribe the caller to the global topic
+
+      Subscribers will receive messages as `{:mysensors, topic, message}` tuples.
+      """
+      @spec unquote(:"subscribe_#{global_topic}")() :: :ok | {:error, term}
+      def unquote(:"subscribe_#{global_topic}")() do
+        name = topic_name(unquote(global_topic))
+        PubSub.subscribe(unquote(bus), name)
+        name
+      end
+
+
+      @doc """
+      Subscribe the caller to the topic
+
+      Subscribers will receive messages as `{:mysensors, topic, message}` tuples.
+      """
+      @spec unquote(:"subscribe_#{topic}")(any) :: :ok | {:error, term}
+      def unquote(:"subscribe_#{topic}")(params) do
+        name = topic_name(unquote(topic_name), params)
+        PubSub.subscribe(unquote(bus), name)
+        name
+      end
+
+
+      @doc """
+      Unsubscribe the caller from the global topic
+      """
+      @spec unquote(:"unsubscribe_#{global_topic}")() :: :ok | {:error, term}
+      def unquote(:"unsubscribe_#{global_topic}")() do
+        PubSub.unsubscribe(unquote(bus), topic_name(unquote(global_topic)))
+      end
+
+      @doc """
+      Unsubscribe the caller from the topic
+      """
+      @spec unquote(:"unsubscribe_#{topic}")(any) :: :ok | {:error, term}
+      def unquote(:"unsubscribe_#{topic}")(params) do
+        PubSub.unsubscribe(unquote(bus), topic_name(unquote(topic_name), params))
+      end
+
+      @doc """
+      Broadcast a message to the topic
+      """
+      @spec unquote(:"broadcast_#{topic}")(any, any) :: :ok | {:error, term}
+      def unquote(:"broadcast_#{topic}")(message, params) do
+        name = topic_name(unquote(topic_name), params)
+        PubSub.broadcast(unquote(bus), name, {:mysensors, unquote(topic), message})
+
+        name = topic_name(unquote(global_topic))
+        PubSub.broadcast(unquote(bus), name, {:mysensors, unquote(topic), message})
+      end
+
+    end
+  end
+
 
 
 end

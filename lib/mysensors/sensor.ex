@@ -179,7 +179,7 @@ defmodule MySensors.Sensor do
     @spec broadcast(MySensors.Message.sensor_updated(), Sensor.t(), Sensor.data(), Sensor.data()) :: t
     def broadcast(mysensors_event, sensor, old_value, new_value) do
       new(sensor, mysensors_event, old_value, new_value)
-      |> Bus.broadcast_sensors_events()
+      |> Bus.broadcast_sensors_events(sensor.uuid)
     end
   end
 end
