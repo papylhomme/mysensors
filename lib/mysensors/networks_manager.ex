@@ -78,7 +78,11 @@ defmodule MySensors.NetworksManager do
     Process.flag(:trap_exit, true)
 
     # Init table, create state
-    networks_db = Path.join(Application.get_env(:mysensors, :data_dir, "./"), "networks.db")
+    networks_db = 
+      Application.get_env(:mysensors, :data_dir, "./")
+      |> Path.join("networks.db")
+      |> String.to_charlist
+
     {:ok, tid} = :dets.open_file(networks_db, ram_file: true, auto_save: 10)
 
     state = %{processes: %{}, table: tid}

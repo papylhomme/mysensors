@@ -196,7 +196,11 @@ defmodule MySensors.Network do
   # Initialize the server
   def init({uuid, config}) do
     # Open database
-    nodes_db = Path.join(Application.get_env(:mysensors, :data_dir, "./"), "network_#{uuid}.db")
+    nodes_db =
+      Application.get_env(:mysensors, :data_dir, "./")
+      |> Path.join("network_#{uuid}.db")
+      |> String.to_charlist
+
     {:ok, tid} = :dets.open_file(nodes_db, ram_file: true, auto_save: 10)
 
     # Start direct children
