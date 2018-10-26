@@ -164,8 +164,8 @@ defmodule MySensors.MessageQueue do
 
   # Enqueue a message
   # don't enqueue if an equivalent message is already waiting
-  defp _enqueue_message(state, item) do
-    case Enum.find(state.message_queue, fn i -> match?(^item, i) end) do
+  defp _enqueue_message(state, item = %{message: msg}) do
+    case Enum.find(state.message_queue, fn %{message: m} -> match?(^msg, m) end) do
       nil ->
         _on_event(state, {:message_queued, item})
         %{state | message_queue: state.message_queue ++ [item]}
