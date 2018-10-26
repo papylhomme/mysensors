@@ -280,7 +280,6 @@ defmodule MySensors.Network do
   end
 
 
-  # Create a task sending the message and awaiting the ack
   def handle_call({:node_uuid, node_id}, _from, state) do
     {:reply, _node_uuid(state.uuid, node_id), state}
   end
@@ -304,7 +303,7 @@ defmodule MySensors.Network do
   end
 
   # Forward log messages
-  # TODO multi keep it that way, use a log channel per network, only log to console ?
+  # TODO keep it that way, use a log channel per network, only log to console ?
   def handle_info(
         {:mysensors, :incoming, %{command: :internal, type: I_LOG_MESSAGE, payload: log}},
         state
@@ -351,7 +350,7 @@ defmodule MySensors.Network do
         state
       ) do
     presentations =
-      case state.presentations[node_id] do
+      case Map.get(state.presentations, node_id) do
         nil ->
           Logger.info("Receiving presentation from node #{node_id}...")
           p = _init_accumulator(state.presentations, node_id)
@@ -402,9 +401,12 @@ defmodule MySensors.Network do
     end
 
     # Request presentation if node is unknown
-    case _node_known?(state, node_id) do
-      true -> {:noreply, state}
+    uuid = _node_uuid(state.uuid, node_id)
+    case _node_known?(state, uuid) do
       false -> {:noreply, %{state | presentations: _request_presentation(state, node_id)}}
+      true ->
+        Bus.broadcast_node_messages(uuid, msg)
+        {:noreply, state}
     end
   end
 
@@ -457,8 +459,8 @@ defmodule MySensors.Network do
   end
 
   # Test whether is known in the system or not
-  defp _node_known?(state, node_id) do
-    :dets.lookup(state.table, node_id) != []
+  defp _node_known?(state, node_uuid) do
+    :dets.lookup(state.table, node_uuid) != []
   end
 
   # Send a message to the network
