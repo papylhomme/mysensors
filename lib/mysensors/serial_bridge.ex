@@ -31,27 +31,19 @@ defmodule MySensors.SerialBridge do
   #  API
   #########
 
-  @doc """
-  Start the server
-  """
+  @doc "Start the server"
   @spec start_link(String.t(), map) :: GenServer.on_start()
-  def start_link(network_uuid, config) do
-    GenServer.start_link(__MODULE__, {network_uuid, config}, name: __MODULE__)
-  end
+  def start_link(network_uuid, config), do: GenServer.start_link(__MODULE__, {network_uuid, config}, name: __MODULE__)
 
 
-  @doc """
-  Retrieve the UUID used by for the transport topic
-  """
+  @doc "Retrieve the UUID used by for the transport topic"
   @spec transport_uuid(String.t(), map, pid) :: String.t()
-  def transport_uuid(network_uuid, _config, _server) do
-    network_uuid
-  end
+  def transport_uuid(network_uuid, _config, _server), do: network_uuid
 
 
-  ###############
-  #  Internals
-  ###############
+  #############################
+  #  GenServer implementation
+  #############################
 
   # Initialize the serial connection at server startup
   def init({network_uuid, config}) do
@@ -120,6 +112,11 @@ defmodule MySensors.SerialBridge do
     Logger.warn("Unknown message: #{inspect(msg)}")
     {:noreply, state}
   end
+
+
+  ###############
+  #  Internals
+  ###############
 
   # Try to connect to the serial gateway
   defp _try_connect(%{uart: uart, device: device, speed: speed}) do

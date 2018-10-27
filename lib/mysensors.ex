@@ -9,7 +9,6 @@ defmodule MySensors do
   alias MySensors.NetworksManager
   alias MySensors.Network
   alias MySensors.Node
-  alias MySensors.Sensor
 
   # Name of the registry mapping UUIDs to processes
   @registry_name MySensors.Registry

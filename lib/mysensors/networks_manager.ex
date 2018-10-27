@@ -1,12 +1,18 @@
 defmodule MySensors.NetworksManager do
   alias MySensors.Network
-  alias MySensors.Events
+
+  alias __MODULE__
+  alias __MODULE__.NetworkRegistered
+  alias __MODULE__.NetworkUnregistered
+  alias __MODULE__.NetworkStatusChanged
 
   @moduledoc """
   A manager for networks
   """
 
   use GenServer, start: {__MODULE__, :start_link, []}
+  use MySensors.PubSub
+
   require Logger
 
 
@@ -14,63 +20,81 @@ defmodule MySensors.NetworksManager do
   #  API
   #########
 
-  @doc """
-  Start the manager
-  """
+  @doc "Start the manager"
   @spec start_link() :: GenServer.on_start()
-  def start_link() do
-    GenServer.start_link(__MODULE__, {}, name: __MODULE__)
-  end
+  def start_link(), do: GenServer.start_link(__MODULE__, {}, name: __MODULE__)
 
-
-  @doc """
-  Get a list of registered networks with their state and configuration
-  """
+  @doc "Get a list of registered networks with their state and configuration"
   @spec networks() :: %{optional(MySensors.uuid) => %{status: Network.status, config: Network.config}}
-  def networks() do
-    GenServer.call(__MODULE__, :networks)
-  end
+  def networks(), do: GenServer.call(__MODULE__, :networks)
 
-
-  @doc """
-  Register a new network `name` using `config`
-  """
+  @doc "Register a new network `name` using `config`"
   @spec register_network(Network.config) :: MySensors.uuid
-  def register_network(config) do
-    GenServer.call(__MODULE__, {:register_network, config})
-  end
+  def register_network(config), do: GenServer.call(__MODULE__, {:register_network, config})
 
-
-  @doc """
-  Unregister a network
-  """
+  @doc "Unregister a network"
   @spec unregister_network(MySensors.uuid) :: term()
-  def unregister_network(uuid) do
-    GenServer.call(__MODULE__, {:unregister_network, uuid})
-  end
+  def unregister_network(uuid), do: GenServer.call(__MODULE__, {:unregister_network, uuid})
 
-
-  @doc """
-  Start a network
-  """
+  @doc "Start a network"
   @spec start_network(MySensors.uuid) :: term()
-  def start_network(uuid) do
-    GenServer.call(__MODULE__, {:start_network, uuid})
-  end
+  def start_network(uuid), do: GenServer.call(__MODULE__, {:start_network, uuid})
 
-
-  @doc """
-  Stop a network
-  """
+  @doc "Stop a network"
   @spec stop_network(MySensors.uuid) :: term()
-  def stop_network(uuid) do
-    GenServer.call(__MODULE__, {:stop_network, uuid})
+  def stop_network(uuid), do: GenServer.call(__MODULE__, {:stop_network, uuid})
+
+
+  ############
+  #  Events
+  ############
+
+  topic_helpers(MySensors.Bus, :networks_events, fn network_uuid -> "network_#{network_uuid}_events" end, "networks_events")
+
+
+  defmodule NetworkRegistered do
+    @moduledoc "Event generated when a new network is registered"
+    defstruct network: nil, config: nil
+
+    @typedoc "The event struct"
+    @type t :: %__MODULE__{network: MySensors.uuid, config: Network.config}
+
+    @doc "Create and broadcast an `#{__MODULE__}` event"
+    @spec broadcast(MySensors.uuid, Network.config) :: :ok | {:error, term}
+    def broadcast(network, config), do: NetworksManager.broadcast_networks_events(%__MODULE__{network: network, config: config})
   end
 
 
-  ###################
-  #  Implementation
-  ###################
+  defmodule NetworkUnregistered do
+    @moduledoc "Event generated when a network is unregistered"
+    defstruct network: nil
+
+    @typedoc "The event struct"
+    @type t :: %__MODULE__{network: MySensors.uuid}
+
+    @doc "Create and broadcast an `#{__MODULE__}` event"
+    @spec broadcast(MySensors.uuid) :: :ok | {:error, term}
+    def broadcast(network), do: NetworksManager.broadcast_networks_events(network, %__MODULE__{network: network})
+  end
+
+
+  defmodule NetworkStatusChanged do
+    @moduledoc "Event generated when the status of a network has changed"
+    defstruct network: nil, status: nil
+
+    @typedoc "The event struct"
+    @type t :: %__MODULE__{network: MySensors.uuid, status: Network.status}
+
+    @doc "Create and broadcast an `#{__MODULE__}` event"
+    @spec broadcast(MySensors.uuid, Network.status) :: :ok | {:error, term}
+    def broadcast(network, status), do: NetworksManager.broadcast_networks_events(network, %__MODULE__{network: network, status: status})
+  end
+
+
+
+  #############################
+  #  GenServer implementation
+  #############################
 
   # Initialize the server
   def init({}) do
@@ -78,7 +102,7 @@ defmodule MySensors.NetworksManager do
     Process.flag(:trap_exit, true)
 
     # Init table, create state
-    networks_db = 
+    networks_db =
       Application.get_env(:mysensors, :data_dir, "./")
       |> Path.join("networks.db")
       |> String.to_charlist
@@ -144,7 +168,7 @@ defmodule MySensors.NetworksManager do
     case Enum.find(state.processes, fn {_uuid, {status, pid}} -> status == :running and pid == from end) do
       {uuid, _} ->
         Logger.info("Network #{uuid} stopped: #{inspect reason}")
-        Events.NetworkStatusChanged.broadcast(uuid, :stopped)
+        NetworkStatusChanged.broadcast(uuid, :stopped)
         {:noreply, %{state | processes: Map.delete(state.processes, uuid)}}
 
       _ ->
@@ -176,7 +200,7 @@ defmodule MySensors.NetworksManager do
       [] ->
         :ok = :dets.insert(state.table, {uuid, network})
         Logger.info "New network #{network.name} registered"
-        Events.NetworkRegistered.broadcast(uuid, network)
+        NetworkRegistered.broadcast(uuid, network)
         uuid
     end
   end
@@ -188,7 +212,7 @@ defmodule MySensors.NetworksManager do
       [] -> :not_registered
       [_] ->
         :dets.delete(state.table, uuid)
-        Events.NetworkUnregistered.broadcast(uuid)
+        NetworkUnregistered.broadcast(uuid)
     end
   end
 
@@ -202,7 +226,7 @@ defmodule MySensors.NetworksManager do
     processes =
       case res do
         {:ok, pid} ->
-          Events.NetworkStatusChanged.broadcast(uuid, {:running, Network.info(pid)})
+          NetworkStatusChanged.broadcast(uuid, {:running, Network.info(pid)})
           Map.put(state.processes, uuid, {:running, pid})
 
         {:error, {:already_started, _pid}} ->
@@ -210,7 +234,7 @@ defmodule MySensors.NetworksManager do
 
         _ ->
           Logger.warn("Error starting network #{network.name}: #{inspect res}")
-          Events.NetworkStatusChanged.broadcast(uuid, {:error, res})
+          NetworkStatusChanged.broadcast(uuid, {:error, res})
           Map.put(state.processes, uuid, {:error, inspect res})
       end
 
@@ -225,5 +249,7 @@ defmodule MySensors.NetworksManager do
       _ -> :not_running
     end
   end
+
+
 
 end

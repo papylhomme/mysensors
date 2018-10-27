@@ -1,5 +1,4 @@
 defmodule MySensors.Network do
-  alias MySensors.Bus
   alias MySensors.TransportBus
   alias MySensors.Types
   alias MySensors.Message
@@ -11,6 +10,8 @@ defmodule MySensors.Network do
   A server to interract with a MySensors network
   """
   use GenServer, start: {__MODULE__, :start_link, [:uuid, :config]}
+  require MySensors.PubSub
+
   require Logger
 
 
@@ -51,81 +52,44 @@ defmodule MySensors.Network do
   #  API
   #########
 
-  @doc """
-  Start the server
-  """
+  @doc "Start the server"
   @spec start_link(MySensors.uuid, Network.config) :: GenServer.on_start()
-  def start_link(uuid, config) do
-    GenServer.start_link(__MODULE__, {uuid, config}, name: MySensors.by_uuid(uuid))
-  end
+  def start_link(uuid, config),  do: GenServer.start_link(__MODULE__, {uuid, config}, name: MySensors.by_uuid(uuid))
 
 
-  @doc """
-  Retrieve information about the network
-  """
-  def info(server) do
-    GenServer.call(server, :info)
-  end
+  @doc "Retrieve information about the network"
+  @spec info(pid) :: Node.t()
+  def info(server), do: GenServer.call(server, :info)
 
-
-  @doc """
-  List the known nodes
-  """
+  @doc "List the known nodes"
   @spec nodes(pid) :: [Node.t()]
-  def nodes(server) do
-    GenServer.call(server, :list_nodes)
-  end
+  def nodes(server), do: GenServer.call(server, :list_nodes)
 
-  @doc """
-  Send a discover command and request presentation from discovered nodes
-  """
+  @doc "Send a discover command and request presentation from discovered nodes"
   @spec scan(pid) :: :ok
-  def scan(server) do
-    GenServer.cast(server, :scan)
-  end
+  def scan(server), do: GenServer.cast(server, :scan)
 
-  @doc """
-  Request presentation from a node
-  """
+  @doc "Request presentation from a node"
   @spec request_presentation(pid, Types.id()) :: :ok
-  def request_presentation(server, node) do
-    :ok = GenServer.cast(server, {:request_presentation, node})
-  end
+  def request_presentation(server, node), do: :ok = GenServer.cast(server, {:request_presentation, node})
 
-
-  @doc """
-  Send a message to the MySensors network
-  """
+  @doc "Send a message to the MySensors network"
   @spec send_message(pid, Message.t()) :: :ok | {:error, term}
-  def send_message(server, message) do
-    :ok = GenServer.call(server, {:send_message, message})
-  end
+  def send_message(server, message), do: :ok = GenServer.call(server, {:send_message, message})
 
-  @doc """
-  Send a message to the MySensors network
-  """
-  @spec send_message(pid, Types.id(), Types.id(), Types.command(), Types.type(), String.t(), boolean) ::
-          :ok
-  def send_message(server, node_id, child_sensor_id, command, type, payload \\ "", ack \\ false) do
-    message = Message.new(node_id, child_sensor_id, command, type, payload, ack)
-    send_message(server, message)
-  end
-
-  @doc """
-  Send a message to the MySensors network, waiting for an ack from the destination
-  """
+  @doc "Send a message to the MySensors network, waiting for an ack from the destination"
   @spec sync_message(pid, Message.t(), timeout) :: :ok | :timeout
   def sync_message(server, message, timeout \\ @ack_timeout) do
     node_uuid = GenServer.call(server, {:node_uuid, message.node_id})
     task =
       Task.async(fn ->
-        Bus.subscribe_node_messages(node_uuid)
+        Node.subscribe_nodes_messages(node_uuid)
 
         message = %{message | ack: true}
         :ok = send_message(server, message)
 
         receive do
-          {:mysensors, :node_messages, ^message} -> message
+          {:mysensors, :nodes_messages, ^message} -> message
         end
       end)
 
@@ -137,35 +101,15 @@ defmodule MySensors.Network do
     end
   end
 
-  @doc """
-  Send a message to the MySensors network, waiting for an ack from the destination
-  """
-  @spec sync_message(pid, Types.id(), Types.id(), Types.command(), Types.type(), String.t(), timeout) ::
-          :ok | :timeout
-  def sync_message(
-        server,
-        node_id,
-        child_sensor_id,
-        command,
-        type,
-        payload \\ "",
-        timeout \\ @ack_timeout
-      ) do
-    message = Message.new(node_id, child_sensor_id, command, type, payload, true)
-    sync_message(server, message, timeout)
-  end
 
-
-
-  @doc """
-  Request gateway version
-  """
+  @doc "Request gateway version"
+  @spec request_version(pid) :: {:ok, String.t} | {:error, :timeout}
   def request_version(server) do
     info = GenServer.call(server, :info)
     task =
       Task.async(fn ->
         TransportBus.subscribe_incoming(info.transport_uuid)
-        :ok = send_message(server, 0, 255, :internal, I_VERSION)
+        :ok = send_message(server, Message.new(0, 255, :internal, I_VERSION))
 
         receive do
           {:mysensors, :incoming,
@@ -187,6 +131,13 @@ defmodule MySensors.Network do
         {:error, :timeout}
     end
   end
+
+
+  ############
+  #  Events
+  ############
+
+  MySensors.PubSub.topic_helpers(MySensors.Bus, :gwlogs, fn network_uuid -> "network_#{network_uuid}_gwlogs" end)
 
 
   ####################
@@ -292,7 +243,7 @@ defmodule MySensors.Network do
 
   # Forward requests to nodes
   def handle_info({:mysensors, :incoming, message = %{command: c}}, state) when c in [:req, :set] do
-    Bus.broadcast_node_messages(_node_uuid(state.uuid, message.node_id), message)
+    Node.broadcast_nodes_messages(_node_uuid(state.uuid, message.node_id), message)
     {:noreply, state}
   end
 
@@ -308,7 +259,7 @@ defmodule MySensors.Network do
         {:mysensors, :incoming, %{command: :internal, type: I_LOG_MESSAGE, payload: log}},
         state
       ) do
-    Bus.broadcast_gateway_logs(log)
+    broadcast_gwlogs(state.uuid, log)
     {:noreply, state}
   end
 
@@ -316,13 +267,13 @@ defmodule MySensors.Network do
   def handle_info({:mysensors, :incoming, msg = %{command: :internal, type: I_TIME}}, state) do
     Logger.debug("Received time request: #{msg}")
 
-    _send_message(state,
+    _send_message(state, Message.new(
       msg.node_id,
       msg.child_sensor_id,
       :internal,
       I_TIME,
       DateTime.utc_now() |> DateTime.to_unix(:seconds)
-    )
+    ))
 
     {:noreply, state}
   end
@@ -338,7 +289,13 @@ defmodule MySensors.Network do
         _ -> ""
       end
 
-    _send_message(state, msg.node_id, msg.child_sensor_id, :internal, I_CONFIG, payload)
+    _send_message(state, Message.new(
+      msg.node_id,
+      msg.child_sensor_id,
+      :internal,
+      I_CONFIG,
+      payload
+    ))
     {:noreply, state}
   end
 
@@ -405,7 +362,7 @@ defmodule MySensors.Network do
     case _node_known?(state, uuid) do
       false -> {:noreply, %{state | presentations: _request_presentation(state, node_id)}}
       true ->
-        Bus.broadcast_node_messages(uuid, msg)
+        Node.broadcast_nodes_messages(uuid, msg)
         {:noreply, state}
     end
   end
@@ -469,17 +426,13 @@ defmodule MySensors.Network do
     TransportBus.broadcast_outgoing(state.transport_uuid, message)
   end
 
-  defp _send_message(state, node, sensor, command, type, payload \\ "") do
-    _send_message(state, Message.new(node, sensor, command, type, payload))
-  end
-
   # Request presentation for the given node
   defp _request_presentation(state, node_id) do
     case Map.has_key?(state.presentations, node_id) do
       true -> state.presentations
       false ->
         Logger.info("Requesting presentation from node #{node_id}...")
-        MessageQueue.push(state.queue, node_id, 255, :internal, I_PRESENTATION)
+        MessageQueue.push(state.queue, Message.new(node_id, 255, :internal, I_PRESENTATION))
         state.presentations |> _init_accumulator(node_id)
       end
   end

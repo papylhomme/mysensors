@@ -2,20 +2,14 @@ defmodule MySensors.PresentationAccumulator do
   alias MySensors.Types
   alias MySensors.Node
 
-  @moduledoc """
-  A server accumulating presentation events
-  """
+  @moduledoc "A server accumulating presentation events"
   use GenServer
 
   @timeout 1000
 
-  @doc """
-  Start the accumulator
-  """
+  @doc "Start the accumulator"
   @spec start_link(Types.id(), String.t(), String.t()) :: GenServer.on_start()
-  def start_link(node_id, type \\ nil, version \\ nil) do
-    GenServer.start(__MODULE__, {node_id, type, version})
-  end
+  def start_link(node_id, type \\ nil, version \\ nil), do: GenServer.start(__MODULE__, {node_id, type, version})
 
   # Initialize the accumulator
   def init({node_id, type, version}) do

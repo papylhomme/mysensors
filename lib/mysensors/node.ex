@@ -1,8 +1,9 @@
 defmodule MySensors.Node do
   alias MySensors.Types
-  alias MySensors.Bus
   alias MySensors.Sensor
   alias MySensors.MessageQueue
+
+  alias __MODULE__
   alias __MODULE__.NodeUpdatedEvent
 
   @moduledoc """
@@ -37,6 +38,8 @@ defmodule MySensors.Node do
         }
 
   use GenServer
+  use MySensors.PubSub
+
   require Logger
 
   #########
@@ -49,61 +52,78 @@ defmodule MySensors.Node do
   On startup the node is loaded from storage
   """
   @spec start_link({String.t(), any, String.t()}) :: GenServer.on_start()
-  def start_link({network_uuid, table, uuid}) do
-    GenServer.start_link(__MODULE__, {network_uuid, table, uuid}, name: MySensors.by_uuid(uuid))
-  end
+  def start_link({network_uuid, table, uuid}), do: GenServer.start_link(__MODULE__, {network_uuid, table, uuid}, name: MySensors.by_uuid(uuid))
 
-  @doc """
-  Request information about the node
-  """
+  @doc "Request information about the node"
   @spec info(pid) :: t
-  def info(pid) do
-    GenServer.call(pid, :info)
-  end
+  def info(pid), do: GenServer.call(pid, :info)
 
-  @doc """
-  List the sensors
-  """
+  @doc "List the sensors"
   @spec sensors(pid) :: [Sensor.info()]
-  def sensors(pid) do
-    GenServer.call(pid, :list_sensors)
-  end
+  def sensors(pid), do: GenServer.call(pid, :list_sensors)
 
-  @doc """
-  Get the node's message queue
-  """
+  @doc "Get the node's message queue"
   @spec queue(pid) :: pid
-  def queue(pid) do
-    GenServer.call(pid, :queue)
-  end
+  def queue(pid), do: GenServer.call(pid, :queue)
 
-  @doc """
-  Handle a specs updated event
-  """
+  @doc "Handle a specs updated event"
   @spec update_specs(pid, t) :: :ok
-  def update_specs(pid, specs) do
-    GenServer.cast(pid, {:update_specs, specs})
-  end
+  def update_specs(pid, specs), do: GenServer.cast(pid, {:update_specs, specs})
 
-  @doc """
-  Send a command to the node
-  """
+  @doc "Send a command to the node"
   @spec command(pid, Types.id(), Types.command(), Types.type(), String.t()) :: :ok
-  def command(pid, sensor_id, command, type, payload \\ "") do
-    GenServer.cast(pid, {:node_command, sensor_id, command, type, payload})
+  def command(pid, sensor_id, command, type, payload \\ ""), do: GenServer.cast(pid, {:node_command, sensor_id, command, type, payload})
+
+  ############
+  #  Events
+  ############
+
+  topic_helpers(MySensors.Bus, :nodes_events, fn node_uuid -> "node_#{node_uuid}_events" end, "nodes_events")
+
+  topic_helpers(MySensors.Bus, :nodes_commands, fn node_uuid -> "node_#{node_uuid}_commands" end)
+  topic_helpers(MySensors.Bus, :nodes_messages, fn node_uuid -> "node_#{node_uuid}_messages" end)
+
+
+  defmodule NodeDiscoveredEvent do
+    @moduledoc "An event generated when a new node is discovered"
+    defstruct uuid: nil, specs: nil
+
+    @typedoc "The event struct"
+    @type t :: %__MODULE__{uuid: MySensors.uuid(), specs: Node.t()}
+
+    @doc "Create and broadcast a NodeDiscoveredEvent"
+    @spec broadcast(Node.t()) :: t
+    def broadcast(specs), do: Node.broadcast_nodes_events(%__MODULE__{uuid: specs.uuid, specs: specs})
   end
 
-  ###############
-  #  Internals
-  ###############
+  defmodule NodeUpdatedEvent do
+    @moduledoc "An event generated when a node is updated"
+    defstruct uuid: nil, specs: nil
+
+    @typedoc "The event struct"
+    @type t :: %__MODULE__{uuid: MySensors.uuid(), specs: Node.t()}
+
+    @doc "Create and broadcast a NodeUpdatedEvent"
+    @spec broadcast(Node.t()) :: t
+    def broadcast(specs) do
+      e = %__MODULE__{uuid: specs.uuid, specs: specs}
+      Node.broadcast_nodes_events(specs.uuid, e)
+    end
+  end
+
+
+
+  #############################
+  #  GenServer implementation
+  #############################
 
   # Initialize the server
   def init({network_uuid, table, uuid}) do
-    Bus.subscribe_node_messages(uuid)
+    subscribe_nodes_messages(uuid)
 
     # init message queue
     {:ok, queue} = MessageQueue.start_link(network_uuid, fn event ->
-      Bus.broadcast_node_commands(event, uuid)
+      broadcast_nodes_commands(network_uuid, event)
     end)
 
     # init sensors
@@ -179,13 +199,18 @@ defmodule MySensors.Node do
 
   # Handle node commands
   def handle_cast({:node_command, sensor_id, command, type, payload}, state) do
-    MessageQueue.push(state.message_queue, state.node.node_id, sensor_id, command, type, payload)
+    MessageQueue.push(state.message_queue, MySensors.Message.new(state.node.node_id, sensor_id, command, type, payload))
     {:noreply, state}
   end
 
+
+  #######################
+  #  Messages handlers
+  #######################
+
   # Handle internal commands
   def handle_info(
-        {:mysensors, :node_messages, msg = %{command: :internal, child_sensor_id: 255, type: type}},
+        {:mysensors, :nodes_messages, msg = %{command: :internal, child_sensor_id: 255, type: type}},
         state = %{node: node}
       ) do
     new_node =
@@ -226,7 +251,7 @@ defmodule MySensors.Node do
 
   # Handle incoming sensor messages
   def handle_info(
-        {:mysensors, :node_messages, message = %{child_sensor_id: sensor_id}},
+        {:mysensors, :nodes_messages, message = %{child_sensor_id: sensor_id}},
         state = %{node: node}
       ) do
 
@@ -244,50 +269,15 @@ defmodule MySensors.Node do
     {:noreply, state}
   end
 
+
+  #############
+  #  Internals
+  #############
+
   # Generate an UUID for the given sensor
   defp _sensor_uuid(node_uuid, sensor_id) do
     UUID.uuid5(node_uuid, "#{sensor_id}")
   end
 
 
-
-  defmodule NodeDiscoveredEvent do
-    @moduledoc """
-    An event generated when a new node is discovered
-    """
-
-    # Event struct
-    defstruct uuid: nil, specs: nil
-
-    @typedoc "The event struct"
-    @type t :: %__MODULE__{uuid: MySensors.uuid(), specs: MySensors.Node.t()}
-
-    @doc """
-    Create and broadcast a NodeDiscoveredEvent
-    """
-    @spec broadcast(MySensors.Node.t()) :: t
-    def broadcast(specs) do
-      %__MODULE__{uuid: specs.uuid, specs: specs}
-      |> Bus.broadcast_nodes_events(specs.uuid)
-    end
-  end
-
-  defmodule NodeUpdatedEvent do
-    @moduledoc "An event generated when a node is updated"
-
-    # Event struct
-    defstruct uuid: nil, specs: nil
-
-    @typedoc "The event struct"
-    @type t :: %__MODULE__{uuid: MySensors.uuid(), specs: MySensors.Node.t()}
-
-    @doc """
-    Create and broadcast a NodeUpdatedEvent
-    """
-    @spec broadcast(MySensors.Node.t()) :: t
-    def broadcast(specs) do
-      %__MODULE__{uuid: specs.uuid, specs: specs}
-      |> Bus.broadcast_nodes_events(specs.uuid)
-    end
-  end
 end

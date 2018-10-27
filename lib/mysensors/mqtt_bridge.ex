@@ -38,23 +38,13 @@ defmodule MySensors.MQTTBridge do
   #  API
   #########
 
-  @doc """
-  Start the server
-  """
+  @doc "Start the server"
   @spec start_link(String.t(), map) :: GenServer.on_start()
-  def start_link(uuid, config) do
-    GenServer.start_link(__MODULE__, {uuid, config})
-  end
+  def start_link(uuid, config), do: GenServer.start_link(__MODULE__, {uuid, config})
 
-
-  @doc """
-  Retrieve the UUID used by for the transport topic
-  """
+  @doc "Retrieve the UUID used by for the transport topic"
   @spec transport_uuid(String.t(), map, pid) :: String.t()
-  def transport_uuid(network_uuid, _config, _server) do
-    network_uuid
-  end
-
+  def transport_uuid(network_uuid, _config, _server), do: network_uuid
 
 
 
@@ -123,18 +113,12 @@ defmodule MySensors.MQTTBridge do
     @behaviour Tortoise.Handler
 
 
-    def init(uuid) do
-      {:ok, uuid}
-    end
+    def init(uuid), do: {:ok, uuid}
+    def connection(_status, state), do: {:ok, state}
+    def subscription(_status, _topic, state), do: {:ok, state}
+    def terminate(_reason, _state), do: :ok
 
-    def connection(_status, state) do
-      {:ok, state}
-    end
-
-    def subscription(_status, _topic, state) do
-      {:ok, state}
-    end
-
+    @doc "Handle messages from the MQTT server and forward them through the transport bus"
     def handle_message(["mysensors-out" | topic], payload, state) do
       case topic do
         [_node_id, _sensor_id, _command, _ack, _type] ->
@@ -151,11 +135,6 @@ defmodule MySensors.MQTTBridge do
 
       {:ok, state}
     end
-
-    def terminate(_reason, _state) do
-      :ok
-    end
-
   end
 
 end

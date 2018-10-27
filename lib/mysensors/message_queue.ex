@@ -15,75 +15,34 @@ defmodule MySensors.MessageQueue do
   #  API
   #########
 
-  @doc """
-  Start a new message queue
-  """
+  @doc "Start a new message queue"
   @spec start_link(fun | nil) :: GenServer.on_start()
-  def start_link(network_uuid, handler \\ nil) do
-    GenServer.start_link(__MODULE__, {network_uuid, handler})
-  end
+  def start_link(network_uuid, handler \\ nil), do: GenServer.start_link(__MODULE__, {network_uuid, handler})
 
-  @doc """
-  Push a message to the queue
-  """
+  @doc "Push a message to the queue"
   @spec push(pid, Message.t()) :: :ok
-  def push(pid, message) do
-    GenServer.cast(pid, {:push, message})
-  end
+  def push(pid, message), do: GenServer.cast(pid, {:push, message})
 
-  @doc """
-  Push a message to the queue
-  """
-  @spec push(pid, Types.id(), Types.id(), Types.command(), Types.type(), String.t()) :: :ok
-  def push(pid, node_id, child_sensor_id, command, type, payload \\ "") do
-    msg = Message.new(node_id, child_sensor_id, command, type, payload, true)
-    push(pid, msg)
-  end
-
-  @doc """
-  Queue a message
-  """
+  @doc "Queue a message"
   @spec queue(pid, Message.t()) :: :ok
-  def queue(pid, message) do
-    GenServer.cast(pid, {:queue, message})
-  end
+  def queue(pid, message), do: GenServer.cast(pid, {:queue, message})
 
-  @doc """
-  Queue a message
-  """
-  @spec queue(pid, Types.id(), Types.id(), Types.command(), Types.type(), String.t()) :: :ok
-  def queue(pid, node_id, child_sensor_id, command, type, payload \\ "") do
-    msg = Message.new(node_id, child_sensor_id, command, type, payload, true)
-    queue(pid, msg)
-  end
-
-  @doc """
-  Returns a list of pending messages
-  """
+  @doc "Returns a list of pending messages"
   @spec list(pid) :: [Message.t()]
-  def list(pid) do
-    GenServer.call(pid, {:list})
-  end
+  def list(pid), do: GenServer.call(pid, {:list})
 
-  @doc """
-  Flush the queue
-  """
+  @doc "Flush the queue"
   @spec flush(pid, fun) :: :ok
-  def flush(pid, filter \\ fn _msg -> true end) do
-    GenServer.cast(pid, {:flush, filter})
-  end
+  def flush(pid, filter \\ fn _msg -> true end), do: GenServer.cast(pid, {:flush, filter})
 
-  @doc """
-  Clear the queue
-  """
+  @doc "Clear the queue"
   @spec clear(pid, fun) :: :ok
-  def clear(pid, filter \\ fn _msg -> true end) do
-    GenServer.cast(pid, {:clear, filter})
-  end
+  def clear(pid, filter \\ fn _msg -> true end), do: GenServer.cast(pid, {:clear, filter})
 
-  ###############
-  #  Internals
-  ###############
+
+  #############################
+  #  GenServer implementation
+  #############################
 
   # Initialize the queue
   def init({network_uuid, handler}) do
@@ -144,6 +103,11 @@ defmodule MySensors.MessageQueue do
         {:noreply, state}
     end
   end
+
+
+  ###############
+  #  Internals
+  ###############
 
   # Enqueue a message
   # prevent multiple :set messages for the same sensor

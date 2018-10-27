@@ -1,6 +1,7 @@
 defmodule MySensors.Sensor do
   alias MySensors.Types
-  alias MySensors.Bus
+
+  alias __MODULE__
   alias __MODULE__.ValueUpdatedEvent
 
   @moduledoc """
@@ -30,6 +31,8 @@ defmodule MySensors.Sensor do
         }
 
   use GenServer
+  use MySensors.PubSub
+
   require Logger
 
   #########
@@ -37,57 +40,62 @@ defmodule MySensors.Sensor do
   #########
 
 
-  @doc """
-  Start the server
-  """
+  @doc "Start the server"
   @spec start_link(String.t, pid, specs) :: GenServer.on_start()
-  def start_link(uuid, node, sensor_specs) do
-    GenServer.start_link(__MODULE__, {uuid, node, sensor_specs}, name: MySensors.by_uuid(uuid))
-  end
+  def start_link(uuid, node, sensor_specs), do: GenServer.start_link(__MODULE__, {uuid, node, sensor_specs}, name: MySensors.by_uuid(uuid))
 
-  @doc """
-  Get information about the sensor
-  """
+  @doc "Get information about the sensor"
   @spec info(pid) :: t
-  def info(pid) do
-    GenServer.call(pid, :info)
-  end
+  def info(pid), do: GenServer.call(pid, :info)
 
-  @doc """
-  Get all available datas
-  """
+  @doc "Get all available datas"
   @spec data(pid) :: datas
-  def data(pid) do
-    GenServer.call(pid, :data)
-  end
+  def data(pid), do: GenServer.call(pid, :data)
 
-  @doc """
-  Get data for the given variable type
-  """
+  @doc "Get data for the given variable type"
   @spec data(pid, Types.variable()) :: data
-  def data(pid, type) do
-    GenServer.call(pid, {:data, type})
-  end
+  def data(pid, type), do: GenServer.call(pid, {:data, type})
 
-  @doc """
-  Send a command to the sensor
-  """
+  @doc "Send a command to the sensor"
   @spec command(pid, Types.command(), Types.type(), String.t()) :: :ok
-  def command(pid, command, type, payload \\ "") do
-    GenServer.cast(pid, {:sensor_command, command, type, payload})
-  end
+  def command(pid, command, type, payload \\ ""), do: GenServer.cast(pid, {:sensor_command, command, type, payload})
 
-  @doc """
-  Handle a sensor event asynchronously
-  """
+  @doc "Handle a sensor event asynchronously"
   @spec on_event(pid, MySensors.Message.sensor_updated()) :: :ok
-  def on_event(pid, msg) do
-    GenServer.cast(pid, {:sensor_event, msg})
+  def on_event(pid, msg), do: GenServer.cast(pid, {:sensor_event, msg})
+
+
+  ############
+  #  Events
+  ############
+
+  topic_helpers(MySensors.Bus, :sensors_events, fn sensor_uuid -> "sensor_#{sensor_uuid}_events" end, "sensors_events")
+
+
+  defmodule ValueUpdatedEvent do
+    @moduledoc "An event generated when a sensor updates one of its values"
+    defstruct sensor: nil, type: nil, old: nil, new: {nil, nil}
+
+    @typedoc "The value updated event struct"
+    @type t :: %__MODULE__{
+            sensor: String.t(),
+            type: Types.type(),
+            old: nil | Sensor.data(),
+            new: Sensor.data()
+          }
+
+    @doc "Create and broadcast a ValueUpdatedEvent from a MySensors sensor update event"
+    @spec broadcast(MySensors.Message.sensor_updated(), Sensor.t(), Sensor.data(), Sensor.data()) :: t
+    def broadcast(mysensors_event, sensor, old_value, new_value) do
+      e = %__MODULE__{sensor: sensor.uuid, type: mysensors_event.type, old: old_value, new: new_value}
+      Sensor.broadcast_sensors_events(sensor.uuid, e)
+    end
   end
 
-  ###############
-  #  Internals
-  ###############
+
+  ##############################
+  #  GenServer Implementation
+  ##############################
 
   # Initialize the server
   def init({uuid, node, {sensor_id, type, desc}}) do
@@ -135,51 +143,16 @@ defmodule MySensors.Sensor do
     {:noreply, state}
   end
 
+
+  ###############
+  #  Internals
+  ###############
+
   # Create a readable sensor name
   # TODO multi fix this or remove
   defp _sensor_name(state) do
     "Sensor #{state.uuid} (#{state.type})"
   end
 
-  defmodule ValueUpdatedEvent do
-    alias MySensors.Sensor
 
-    @moduledoc """
-    An event generated when a sensor updates one of its values
-    """
-
-    # Event struct
-    defstruct sensor: nil, type: nil, old: nil, new: {nil, nil}
-
-    @typedoc "The value updated event struct"
-    @type t :: %__MODULE__{
-            sensor: String.t(),
-            type: Types.type(),
-            old: nil | Sensor.data(),
-            new: Sensor.data()
-          }
-
-    @doc """
-    Create a ValueUpdatedEvent from a MySensors sensor update event
-    """
-    @spec new(Sensor.t(), MySensors.Message.sensor_updated(), Sensor.data(), Sensor.data()) :: t
-    def new(sensor, mysensors_event, old_value, new_value) do
-      %__MODULE__{
-        sensor: sensor.uuid,
-        type: mysensors_event.type,
-        old: old_value,
-        new: new_value
-      }
-    end
-
-
-    @doc """
-    Create and broadcast a ValueUpdatedEvent from a MySensors sensor update event
-    """
-    @spec broadcast(MySensors.Message.sensor_updated(), Sensor.t(), Sensor.data(), Sensor.data()) :: t
-    def broadcast(mysensors_event, sensor, old_value, new_value) do
-      new(sensor, mysensors_event, old_value, new_value)
-      |> Bus.broadcast_sensors_events(sensor.uuid)
-    end
-  end
 end

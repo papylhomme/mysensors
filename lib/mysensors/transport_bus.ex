@@ -1,6 +1,4 @@
 defmodule MySensors.TransportBus do
-  use MySensors.PubSub
-
   @moduledoc """
   PubSub implementation for bridges communication
 
@@ -9,13 +7,9 @@ defmodule MySensors.TransportBus do
       config :mysensors,
         transport_bus_name: CustomBusName
   """
+  use MySensors.PubSub
 
-  @bridge_name Application.get_env(:mysensors, :transport_bus_name, __MODULE__)
-
-
-  topic_helpers(@bridge_name, :incoming, fn transport_uuid -> "incoming#{transport_uuid}" end)
-  topic_helpers(@bridge_name, :outgoing, fn transport_uuid -> "outgoing#{transport_uuid}" end)
-
+  @bus_name Application.get_env(:mysensors, :transport_bus_name, __MODULE__)
 
 
   @doc """
@@ -23,8 +17,17 @@ defmodule MySensors.TransportBus do
   """
   def child_spec(_args) do
     Supervisor.child_spec(
-      %{start: {Phoenix.PubSub.PG2, :start_link, [@bridge_name, []]}, id: @bridge_name},
+      %{start: {Phoenix.PubSub.PG2, :start_link, [@bus_name, []]}, id: @bus_name},
       []
     )
   end
+
+
+  def subscribe(topic), do: Phoenix.PubSub.subscribe(@bus_name, topic)
+  def unsubscribe(topic), do: Phoenix.PubSub.unsubscribe(@bus_name, topic)
+  def broadcast(topic, message), do: Phoenix.PubSub.broadcast(@bus_name, topic, message)
+
+  topic_helpers(__MODULE__, :incoming, fn transport_uuid -> "transport_#{transport_uuid}_incoming" end)
+  topic_helpers(__MODULE__, :outgoing, fn transport_uuid -> "transport_#{transport_uuid}_outgoing" end)
+
 end

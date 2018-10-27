@@ -25,22 +25,14 @@ defmodule MySensors.RemoteBridge do
   #  API
   #########
 
-  @doc """
-  Start the server
-  """
+  @doc "Start the server"
   @spec start_link(String.t(), map) :: GenServer.on_start()
-  def start_link(uuid, config) do
-    GenServer.start_link(__MODULE__, {uuid, config})
-  end
+  def start_link(uuid, config), do: GenServer.start_link(__MODULE__, {uuid, config})
 
 
-  @doc """
-  Retrieve the UUID used by for the transport topic
-  """
+  @doc "Retrieve the UUID used by for the transport topic"
   @spec transport_uuid(String.t(), map, pid) :: String.t()
-  def transport_uuid(_network_uuid, config, _server) do
-    config.transport
-  end
+  def transport_uuid(_network_uuid, config, _server), do: config.transport
 
 
 
