@@ -380,7 +380,7 @@ defmodule MySensors.Network do
 
       true ->
         Logger.debug("Presentation accumulator for node #{acc.node_id} finishing #{inspect(acc)}")
-        _node_presentation(state, acc)
+        _node_presentation(state, %{acc | last_seen: DateTime.utc_now()})
     end
 
     {:noreply, %{state | presentations: Map.delete(state.presentations, acc.node_id)}}
@@ -445,9 +445,9 @@ defmodule MySensors.Network do
       false ->
         Logger.info("New node registration #{inspect(acc)}")
         :ok = :dets.insert(state.table, {uuid, acc})
-        _start_child(state, uuid)
+        {:ok, pid} = _start_child(state, uuid)
 
-        Node.NodeDiscoveredEvent.broadcast(acc)
+        Node.NodeDiscoveredEvent.broadcast(Node.info(pid))
 
       true ->
         :ok = :dets.insert(state.table, {uuid, acc})
@@ -457,7 +457,7 @@ defmodule MySensors.Network do
           |> Enum.find(fn {local_uuid, _, _, _} -> local_uuid == uuid end)
 
         case child do
-          {_, pid, _, _} -> Node.update_specs(pid, acc)
+          {_, pid, _, _} -> Node.update_specs(pid, %{acc | uuid: uuid})
           _ -> nil
         end
     end

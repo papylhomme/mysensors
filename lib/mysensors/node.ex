@@ -98,16 +98,15 @@ defmodule MySensors.Node do
 
   defmodule NodeUpdatedEvent do
     @moduledoc "An event generated when a node is updated"
-    defstruct uuid: nil, specs: nil
+    defstruct uuid: nil, info: %{}
 
     @typedoc "The event struct"
-    @type t :: %__MODULE__{uuid: MySensors.uuid(), specs: Node.t()}
+    @type t :: %__MODULE__{uuid: MySensors.uuid(), info: map}
 
     @doc "Create and broadcast a NodeUpdatedEvent"
-    @spec broadcast(Node.t()) :: t
-    def broadcast(specs) do
-      e = %__MODULE__{uuid: specs.uuid, specs: specs}
-      Node.broadcast_nodes_events(specs.uuid, e)
+    @spec broadcast(MySensors.uuid(), map) :: t
+    def broadcast(uuid, info) do
+      Node.broadcast_nodes_events(uuid, %__MODULE__{uuid: uuid, info: info})
     end
   end
 
@@ -175,26 +174,24 @@ defmodule MySensors.Node do
   # Handle node specs update
   # TODO more robust change detection
   def handle_cast({:update_specs, node_specs}, state = %{node: node}) do
-    res =
-      if Map.size(node.sensors) == Map.size(node_specs.sensors) do
-        new_state =
-          put_in(state, [:node], %{
-            node
-            | type: node_specs.type,
-              version: node_specs.version,
-              sketch_name: node_specs.sketch_name,
-              sketch_version: node_specs.sketch_version
-          })
+    if Map.size(node.sensors) == Map.size(node_specs.sensors) do
+      info = %{
+        type: node_specs.type,
+        version: node_specs.version,
+        sketch_name: node_specs.sketch_name,
+        sketch_version: node_specs.sketch_version,
+        last_seen: DateTime.utc_now()
+      }
 
-        Logger.info("Node #{node.node_id} received a specs update")
-        {:noreply, new_state}
-      else
-        Logger.warn("Node #{node.node_id} received incompatible specs update, restarting")
-        {:stop, {:shutdown, :specs_updated}, state}
-      end
+      Logger.info("Node #{node.node_id} received a specs update")
+      NodeUpdatedEvent.broadcast(node.uuid, info)
 
-    NodeUpdatedEvent.broadcast(node_specs)
-    res
+      {:noreply, put_in(state, [:node], Map.merge(node, info))}
+    else
+      Logger.warn("Node #{node.node_id} received incompatible specs update, restarting")
+      # TODO events broadcast events to notify the change
+      {:stop, {:shutdown, :specs_updated}, state}
+    end
   end
 
   # Handle node commands
@@ -218,16 +215,14 @@ defmodule MySensors.Node do
         # handle battery level
         I_BATTERY_LEVEL ->
           Logger.debug("Node #{node.node_id} handling battery level: #{msg.payload}")
-          node = %{node | battery: msg.payload}
-          NodeUpdatedEvent.broadcast(node)
-          node
+          NodeUpdatedEvent.broadcast(node.uuid, %{battery: msg.payload, last_seen: DateTime.utc_now()})
+          %{node | battery: msg.payload}
 
         # handle pre sleep notification
         I_PRE_SLEEP_NOTIFICATION ->
           Logger.debug("Node #{node.node_id} handling pre sleep")
-          node = %{node | status: "SLEEPING", last_seen: DateTime.utc_now()}
-          NodeUpdatedEvent.broadcast(node)
-          node
+          NodeUpdatedEvent.broadcast(node.uuid, %{status: "SLEEPING", last_seen: DateTime.utc_now()})
+          %{node | status: "SLEEPING", last_seen: DateTime.utc_now()}
 
         # handle post sleep notification
         I_POST_SLEEP_NOTIFICATION ->
@@ -237,9 +232,8 @@ defmodule MySensors.Node do
           MessageQueue.flush(state.message_queue)
 
           # update status
-          node = %{node | status: "RUNNING", last_seen: DateTime.utc_now()}
-          NodeUpdatedEvent.broadcast(node)
-          node
+          NodeUpdatedEvent.broadcast(node.uuid, %{status: "RUNNING", last_seen: DateTime.utc_now()})
+          %{node | status: "RUNNING", last_seen: DateTime.utc_now()}
 
         # discard other commands
         _ ->
