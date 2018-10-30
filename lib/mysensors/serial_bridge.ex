@@ -12,13 +12,12 @@ defmodule MySensors.SerialBridge do
 
   # Configuration
 
-  Use `:serial_bridge` to configure the bridge. You can use `Nerves.UART.enumerate/0` to obtain a list of available devices.
+  You can use `Nerves.UART.enumerate/0` to obtain a list of available devices.
 
-      config :mysensors,
-        serial_bridge: %{
-          device: "ttyUSB0",
-          speed: 115200
-        }
+      serial_bridge: %{
+        device: "ttyUSB0",
+        speed: 115200
+      }
   """
 
   use GenServer, start: {__MODULE__, :start_link, [:uuid, :config]}

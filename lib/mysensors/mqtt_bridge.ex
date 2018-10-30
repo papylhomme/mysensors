@@ -17,15 +17,14 @@ defmodule MySensors.MQTTBridge do
 
   # Configuration
 
-  Use `:mqtt_bridge` to configure the bridge. Any missing key will be filled using the default values used below.
+  Any missing configuration key will be filled using the default values used below.
 
-      config :mysensors,
-        mqtt_bridge: %{
-          client_id: #{inspect @default.client_id},
-          host: #{inspect @default.host},
-          port: #{inspect @default.port},
-          root: #{inspect @default.root}
-        }
+      mqtt_bridge_config: %{
+        client_id: #{inspect @default.client_id},
+        host: #{inspect @default.host},
+        port: #{inspect @default.port},
+        root: #{inspect @default.root}
+      }
 
   """
 
