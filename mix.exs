@@ -15,7 +15,10 @@ defmodule MySensors.Mixfile do
   def application do
     [
       mod: {MySensors, []},
-      extra_applications: [:logger, :tortoise]
+      extra_applications: [
+        :logger,
+        :tortoise # required by MQTTBridge
+      ]
     ]
   end
 
@@ -25,8 +28,8 @@ defmodule MySensors.Mixfile do
       {:ex_doc, "~> 0.19", only: :dev, runtime: false},
       {:phoenix_pubsub, "~> 1.0"},
       {:elixir_uuid, "~> 1.2"},
-      {:nerves_uart, "~> 1.2"}, # required by SerialBridge
-      {:tortoise, "~> 0.9"}
+      {:circuits_uart, "~> 1.3"}, # required by SerialBridge
+      {:tortoise, "~> 0.9"} # required by MQTTBridge
     ]
   end
 end

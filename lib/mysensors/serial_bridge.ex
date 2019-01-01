@@ -12,12 +12,14 @@ defmodule MySensors.SerialBridge do
 
   # Configuration
 
-  You can use `Nerves.UART.enumerate/0` to obtain a list of available devices.
+  The serial bridge needs a device name and a transmission speed.
 
-      serial_bridge: %{
+      %{
         device: "ttyUSB0",
         speed: 115200
       }
+
+  You can use `enumerate_uarts/0` to obtain a list of available devices on the system.
   """
 
   use GenServer, start: {__MODULE__, :start_link, [:uuid, :config]}
@@ -40,18 +42,24 @@ defmodule MySensors.SerialBridge do
   def transport_uuid(network_uuid, _config, _server), do: network_uuid
 
 
+  @doc "Enumerate the UARTs available on the system"
+  @spec enumerate_uarts() :: map()
+  def enumerate_uarts(), do: Circuits.UART.enumerate
+
+
   #############################
   #  GenServer implementation
   #############################
 
   # Initialize the serial connection at server startup
+  @doc false
   def init({network_uuid, config}) do
     device = config.device
     speed = config.speed
     Logger.info("Starting serial bridge on #{device} for network #{network_uuid}")
 
     # Init UART system
-    {:ok, uart} = Nerves.UART.start_link
+    {:ok, uart} = Circuits.UART.start_link
 
     # Subscribe to transport
     TransportBus.subscribe_outgoing(network_uuid)
@@ -73,20 +81,20 @@ defmodule MySensors.SerialBridge do
   end
 
   # Handle UART closed message
-  def handle_info({:nerves_uart, _, {:error, :eio}}, state) do
+  def handle_info({:circuits_uart, _, {:error, :eio}}, state) do
     Logger.warn("UART closed !")
     {:noreply, %{state | status: :disconnected}, @retry_timeout}
   end
 
   # Handle incoming messages
-  def handle_info(msg = {:nerves_uart, _, _}, state = %{device: device}) do
+  def handle_info(msg = {:circuits_uart, _, _}, state = %{device: device}) do
     case msg do
       # error
-      {:nerves_uart, ^device, {:error, e}} ->
+      {:circuits_uart, ^device, {:error, e}} ->
         Logger.error("UART error: #{inspect(e)}")
 
       # message received
-      {:nerves_uart, ^device, str} ->
+      {:circuits_uart, ^device, str} ->
         case Message.parse(str) do
           {:error, _, _, _} -> Logger.error("Unrecognized MySensors message: #{str}")
           msg -> TransportBus.broadcast_incoming(state.network_uuid, msg)
@@ -102,7 +110,7 @@ defmodule MySensors.SerialBridge do
 
   # Handle outgoing messages
   def handle_info({:mysensors, :outgoing, message}, state) do
-    Nerves.UART.write(state.uart, "#{Message.serialize(message)}\n")
+    Circuits.UART.write(state.uart, "#{Message.serialize(message)}\n")
     {:noreply, state}
   end
 
@@ -119,18 +127,18 @@ defmodule MySensors.SerialBridge do
 
   # Try to connect to the serial gateway
   defp _try_connect(%{uart: uart, device: device, speed: speed}) do
-    case Map.has_key?(Nerves.UART.enumerate(), device) do
+    case Map.has_key?(Circuits.UART.enumerate(), device) do
       false ->
         Logger.debug("Serial device #{device} not present, will retry later")
         :not_present
 
       true ->
-        case Nerves.UART.open(
+        case Circuits.UART.open(
                uart,
                device,
                speed: speed,
                active: true,
-               framing: {Nerves.UART.Framing.Line, separator: "\n"}
+               framing: {Circuits.UART.Framing.Line, separator: "\n"}
              ) do
           :ok ->
             Logger.info("Connected to serial device #{device}")
