@@ -33,6 +33,4 @@ config :logger, level: :debug
 config :mysensors,
   measure: :metric,
   networks: %{
-    mqtt_bridge: {MySensors.MQTTBridge, %{}},
-    remote_network: {MySensors.RemoteBridge, %{node: :"habbot@habbot.home", transport: ""}}
   }

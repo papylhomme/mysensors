@@ -1,8 +1,7 @@
 defmodule MysensorsTest do
   use ExUnit.Case
-  doctest Mysensors
+  doctest MySensors
 
   test "greets the world" do
-    assert Mysensors.hello() == :world
   end
 end
